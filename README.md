@@ -44,6 +44,7 @@ attributeTypes: ( 0.9.2342.19200300.100.1.1
 )
 ```
 as you can see, the Attribute `uid` (userid is deprecated) can be search case insensitive as well as matching parts of the string. This might be a useful information if we query for a `glob` of people starting with `name` or expect a particular entry not to be returned 
+
 **NOTE**: the parameter `-LLL` removes the noise comments from the ldapsearch command and is typically used to create ldif file content. 
 ```
 ldapsearch -H ldap://ds389-001.ds389-001.svc:10389 \
@@ -895,7 +896,14 @@ dn: cn=Karl Price,ou=People,dc=example,dc=com
 the command now stalls and waits for ever. Hit `[CTRL+C]` to abort the query. What happened ?
 Well take a look at the same command using the option `-d 4`
 ```
-ldapsearch -x -H ldaps://ds389-002.ds389-002.svc:10636                          -D 'cn=Directory Manager'                          -w 'changeme' -b ou=people,dc=example,dc=com dn -LLL -C -d 4
+ldapsearch -x -H ldaps://ds389-002.ds389-002.svc:10636 \
+              -D 'cn=Directory Manager' \
+              -w 'changeme' \
+              -b 'ou=people,dc=example,dc=com' \
+              -LLL \
+              -C \
+              -d 4 \
+              dn
 ldap_build_search_req ATTRS: dn
 dn: ou=People,dc=example,dc=com
 dn: cn=Gregory Cook,ou=People,dc=example,dc=com
@@ -935,6 +943,7 @@ now start `tshark` in a separate terminal or as background job, with protocol `l
 tshark -i any -f 'tcp port 10389' -O ldap -Y ldap -d tcp.port=10389,ldap & 
 ```
 execute the search query that was stalling once more and switch to `plain-LDAP` on port `10389` 
+
 **HINT**: if you choose to use `tshark` in background, redirect all output of ldapsearch to `/dev/null`
 ```
 ldapsearch -x -H ldap://ds389-002.ds389-002.svc:10389 \
@@ -971,6 +980,7 @@ Lightweight Directory Access Protocol
         [Time: 0.000562006 seconds]
 ```
 followed by an anonymous bind against the LDAP `root` 
+
 **NOTE**: see the change in `Dst` to the first server happening
 ```
 Internet Protocol Version 4, Src: 10.246.1.61, Dst: 10.26.236.84

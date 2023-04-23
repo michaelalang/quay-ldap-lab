@@ -323,7 +323,7 @@ objectClass: top
 objectClass: groupOfNames
 cn: quay-superuser
 ```
-now let's add our existing uids to the `allusers` group by retrieving all uid values
+now let's add our existing uids to the `allusers` group by retrieving all dn values
 
 ```
 ldapsearch -x -H ldap://ds389-001.ds389-001.svc:10389 \
@@ -605,6 +605,8 @@ we now have to options to limit unauthenticated access by
 * writing a more restrictive ACI for base 
 * disabling unauthenticated access to the whole LDAP server
 
+apply the `ACI` update to do so, as shown below 
+
 ```
 ldapmodify -x -H ldaps://ds389-001.ds389-001.svc:10636 \
                          -D 'cn=Directory Manager' \
@@ -618,7 +620,7 @@ aci: (targetattr="*")(targetfilter="(objectClass=*)")(version 3.0; acl "Enable
  
  ```
 
-afterwards, our unauthenticated queries will not return any result but will not indicate, that we need to authenticate to retrieve them.
+afterwards, our unauthenticated queries will not return any result and will also not indicate, that we need to authenticate to retrieve them.
 ```
 ldapsearch -x -H ldaps://ds389-001.ds389-001.svc:10636 \
            -b 'dc=example,dc=com' \
@@ -637,6 +639,7 @@ result: 0 Success
 
 # numResponses: 1
 ```
+
 compared to requiring all connections to be authenticated on the LDAP server
 ```
 ldapmodify -x -H ldaps://ds389-001.ds389-001.svc:10636 \
@@ -648,6 +651,7 @@ replace: nsslapd-allow-anonymous-access
 nsslapd-allow-anonymous-access: off
 
 ```
+
 will result in any unauthenticated query to be rejected with
 ```
 ldapsearch -x -H ldaps://ds389-001.ds389-001.svc:10636 \
@@ -658,6 +662,7 @@ ldap_bind: Inappropriate authentication (48)
 ```           
 
 ### granting userPassword changes in restricted environments
+
 as per our previous configuration and the default `ACI`, only read access is granted to authenticated Users.
 ```
 # the cn of the user might differ in your LAB, please pick any user

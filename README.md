@@ -15,7 +15,7 @@ Following requirements are necessary upfront to ensure a smooth experience with 
 ensure, you have been successfully logged in to following registries (using the default image set)
 - quay.io
 - docker.io
-- 
+ 
 ```
 # please use your approriate credentials for the registries 
 for registry in quay.io docker.io ; do 
@@ -44,7 +44,7 @@ disable firewalld to not conflict with crio rules
 ```
 systemctl disable --now firewalld
 ```
-download the binaries to utilize kind (k8s), flux (gitops), oc/kubectl (mgmt), kustomize (build/verify)
+download the binaries to utilize kind (k8s), oc/kubectl (mgmt), kustomize (build/verify)
 ```
 curl -o/usr/bin/kind -L -s https://github.com/kubernetes-sigs/kind/releases/download/v0.17.0/kind-linux-amd64
 chmod +x /usr/bin/kind

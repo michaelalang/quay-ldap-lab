@@ -68,7 +68,7 @@ One mandatory item to be modified is the `apiServerAddress`. This should point t
 ```
 API=$(hostname -i)
 # or you preferred listen Address
-cd quay-demo-lab
+cd quay-ldap-lab
 sed -i -e " s#apiServerAddress: 127.0.0.1#apiServerAddress: ${API}#; " quay-ldap-lab.yml
 kind create cluster --config quay-ldap-lab.yml
 ```

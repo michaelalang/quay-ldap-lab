@@ -1,0 +1,31 @@
+apiVersion: networking.istio.io/v1beta1
+kind: DestinationRule
+metadata:
+  name: dr-ds389
+spec:
+  host: ds389-001
+  subsets:
+  - labels:
+      version: v1
+    name: v1
+---
+apiVersion: networking.istio.io/v1beta1
+kind: VirtualService
+metadata:
+  name: vs-ds389
+spec:
+  gateways:
+  - istio-system/frontend-gateway
+  hosts:
+  - ds389-001.example.com
+  http:
+  - match:
+    - uri:
+        prefix: /
+    route:
+    - destination:
+        host: ds389-001
+        port:
+          number: 19090
+        subset: v1
+      weight: 100

@@ -1,5 +1,188 @@
 # LDAP Lab 
 ## deployment Lap environment
+
+# Requirements
+
+Following requirements are necessary upfront to ensure a smooth experience with the Lab
+
+ - podman
+ - internet access when bootstrapping
+ - a git repository access able through https
+ - registry credentials to pull various images
+ - superuser privileges as kind-k8s doesn't work well with rootless deployments
+ - firewalld needs to be disabled 
+
+ensure, you have been successfully logged in to following registries (using the default image set)
+- quay.io
+- docker.io
+- 
+```
+# please use your approriate credentials for the registries 
+for registry in quay.io docker.io ; do 
+    podman login ${registry}
+done 
+```
+
+### Setup and prepare the system 
+
+install the required packages
+
+```
+dnf install -y podman git
+```
+
+adjust inotify settings of the system to spawn a cluster and workload
+```
+cat <<EOF> /etc/sysctl.d/kind.conf
+fs.inotify.max_user_instances = 12800
+fs.inotify.max_user_watches = 21155100
+EOF
+sysctl -p /etc/sysctl.d/kind.conf
+```
+disable firewalld to not conflict with crio rules 
+
+```
+systemctl disable --now firewalld
+```
+download the binaries to utilize kind (k8s), flux (gitops), oc/kubectl (mgmt), kustomize (build/verify)
+```
+curl -o/usr/bin/kind -L -s https://github.com/kubernetes-sigs/kind/releases/download/v0.17.0/kind-linux-amd64
+chmod +x /usr/bin/kind
+curl -L -o- https://mirror.openshift.com/pub/openshift-v4/clients/ocp/latest/openshift-client-linux.tar.gz | tar -xzf- -C /usr/bin oc kubectl
+chmod +x /usr/bin/{oc,kubectl}
+curl -L -o- https://github.com/kubernetes-sigs/kustomize/releases/download/kustomize%2Fv5.0.0/kustomize_v5.0.0_linux_amd64.tar.gz | tar -xzf- -C /usr/bin/ kustomize
+chmod +x /usr/bin/kustomize
+```
+### Clone the repository 
+
+clone the repository from https://github.com/michaelalang/quay-ldap-lab.git to your local file system
+
+```
+git clone https://github.com/michaelalang/quay-ldap-lab.git
+```
+
+### Bootstrap the k8s kind cluster
+
+the configuration of the Cluster is defined in the file `quay-ldap-lab.yml`. If you want to have more or less Nodes, adjusting the configuration can be done.
+One mandatory item to be modified is the `apiServerAddress`. This should point to your primary interface IP address to ensure the bootstrap process on joining Nodes will succeed.
+```
+API=$(hostname -i)
+# or you preferred listen Address
+cd quay-demo-lab
+sed -i -e " s#apiServerAddress: 127.0.0.1#apiServerAddress: ${API}#; " quay-ldap-lab.yml
+kind create cluster --config quay-ldap-lab.yml
+```
+#### deploy the necessary services to the k8s cluster
+##### metallb for ingress connectivity
+
+deploy the controller 
+
+```
+oc create -k apps/metallb/base 
+oc -n metallb-system wait --for condition=Ready pods -l component=speaker --timeout=300s
+```
+now edit the IPAddressPool values for your API Address on which you want to connect to for services exposed
+
+```
+apiVersion: metallb.io/v1beta1
+kind: IPAddressPool
+metadata:
+  name: example
+  namespace: metallb-system
+spec:
+  addresses:
+  - 192.168.0.1-192.168.0.1
+```
+add the CR to finish the metallb deployment
+
+```
+oc -n metallb-system create -f apps/metallb/variants/default/IPAddressPool.yml
+```
+##### cert-manager for certificates 
+next, we want the Cert-Manager to be deployed as other deployments might require a Certificate and would need a restart to pick up a later deployed Certificate 
+```
+oc create -k apps/cert-manager/base/
+oc -n cert-manager wait --for condition=Ready pods -l app.kubernetes.io/instance=cert-manager --timeout=300s
+```
+
+##### traefik as ingress controller
+for the Lab purpose, only the following names are registered in the Certificates:
+* ds389-001.example.com
+* ds389-002.example.com
+
+Feel free to adjust or extend the names accordingly in the file `apps/traefik/variants/default/certificate.yml`. Afterwards deploy the ingress controller
+```
+oc create -k apps/traefik/variants/default/
+oc -n kube-system wait --for condition=Ready pods -l app.kubernetes.io/name=traefik --timeout=300s
+```
+
+if you want to avoid the Security warnings you can extract the ingress certificates and use them accordingly
+
+```
+oc -n kube-system extract secret/traefik-ingress-ssl
+# alternative you can add ds389-001.example.com and ds389-002.example.com to your /etc/hosts file
+curl --cacert ca.crt --resolv ds389-001.example.com:443:127.0.0.1 https://ds389-001.example.com
+404 page not found
+```
+
+##### Istio as ServiceMesh controller
+Istio provides a ServiceMesh to our cluster. The ingress will provide functionality to access the Console for our LDAP services in a simple manner.
+
+```
+oc apply -k apps/istio/variants/default/
+```
+
+with delegating all SSL SNI ingress to Istio, we need to utilize those Certificates now
+**NOTE**: until the `istio-ingressgateway` is available, the certificate will not match as it will be handled by traefik.
+```
+oc -n istio-system extract secret/frontend-gateway --confirm
+# alternative you can add ds389-001.example.com and ds389-002.example.com to your /etc/hosts file
+curl -I --cacert tls.crt --resolv ds389-001.example.com:443:127.0.0.1 https://ds389-001.example.com
+HTTP/2 404 
+date: Sun, 23 Apr 2023 19:37:34 GMT
+server: istio-envoy
+```
+
+##### deploy the LDAP instances for the Lab
+
+the LDAP deployment consists of two LDAP instances. Each separated into it's own namespace.
+```
+oc create -k apps/ds389/variants/001
+oc create -k apps/ds389/variants/002
+```
+##### our tool workbench 
+to simplify access and make resolution Lab persistent, we utilize a tool image that has various ldap tools included 
+* openldap-clients 
+* python3-ldap 
+* python3-ldap3 
+* ldapvi 
+* git 
+* wireshark-cli 
+* man 
+* 389-ds-base
+start a session as follows
+
+```
+# alternatively you can as well use the ds389-002 namespace
+
+oc -n ds389-001 create -f apps/ds389/base/tools.yml
+oc -n ds389-001 wait --for condition=Ready deploy/tools --timeout=300s
+oc -n ds389-001 exec -ti deploy/tools -- /bin/bash
+```
+
+**NOTE**:
+* The following exercises are expected to be executed within a `tools` container instance.
+* All passwords are set to the string `changeme` 
+* Cockpit instances are available at
+	* https://ds389-001.example.com
+	* https://ds389-002.example.com
+* if you get logged out of Cockpit use the credentials `root` : `changeme`
+* Your workstation needs to resolve the example.com names to the configured Ingress IP of the k8s cluster
+* All queries and references to attribute values are randomized. You need to adjust the values accordingly
+	* `uid=r*` or `uid=re*`
+	* `cn=Michael Moore,ou=People,dc=example,dc=com`
+
+
 ## basic LDAP search queries
 `ldapsearch` is the tool we want to familiarize with as it's the most commonly used when looking up and or debugging LDAP records. An LDAP search requires following items:
 * ldapuri or host+port 
@@ -12,19 +195,19 @@ further more following will be added if not specified:
 
 let's start with the first query
 ```
-ldapsearch -H ldap://ds389-001.ds389-001.svc:10389 \
+ldapsearch -x -H ldap://ds389-001.ds389-001.svc:10389 \
                     -b 'dc=example,dc=com' \
                     -D 'cn=Directory Manager' \
                     -w 'changeme'
 ```
 it's a good practice to always quote the items that might have a space inside (base, dn's, filters) but you can as well escape spaces like
 ```
-ldapsearch -H ldap://ds389-001.ds389-001.svc:10389 \
+ldapsearch -x -H ldap://ds389-001.ds389-001.svc:10389 \
                     -b 'dc=example,dc=com' \
                     -D 'cn=Directory Manager' \
                     -w 'changeme'
 
-ldapsearch -H ldap://ds389-001.ds389-001.svc:10389 \
+ldapsearch -x -H ldap://ds389-001.ds389-001.svc:10389 \
                     -b dc=example,dc=com \
                     -D cn=Directory\ Manager \
                     -w 'changeme'
@@ -44,13 +227,15 @@ attributeTypes: ( 0.9.2342.19200300.100.1.1
 )
 ```
 as you can see, the Attribute `uid` (userid is deprecated) can be search case insensitive as well as matching parts of the string. This might be a useful information if we query for a `glob` of people starting with `name` or expect a particular entry not to be returned 
-
 **NOTE**: the parameter `-LLL` removes the noise comments from the ldapsearch command and is typically used to create ldif file content. 
 ```
-ldapsearch -H ldap://ds389-001.ds389-001.svc:10389 \
+ldapsearch -x -H ldap://ds389-001.ds389-001.svc:10389 \
            -b 'dc=example,dc=com' \
            -D  'cn=Directory Manager' \
-           -w 'changeme' 'uid=r*' -LLL uid 
+           -w 'changeme' \
+           -LLL \
+           'uid=r*' \
+           uid 
 dn: cn=Kenneth Robles,ou=People,dc=example,dc=com
 uid: reedcynthia
 
@@ -62,10 +247,13 @@ uid: royjames
 ```
 we did expect that only two records are return but received three so we can limit our matching further
 ```
-ldapsearch -H ldap://ds389-001.ds389-001.svc:10389 \
+ldapsearch -x -H ldap://ds389-001.ds389-001.svc:10389 \
            -b 'dc=example,dc=com' \
            -D  'cn=Directory Manager' \
-           -w 'changeme' 'uid=re*' -LLL uid 
+           -w 'changeme' \
+           -LLL \
+           'uid=re*' \
+           uid 
 dn: cn=Kenneth Robles,ou=People,dc=example,dc=com
 uid: reedcynthia
 
@@ -323,7 +511,7 @@ objectClass: top
 objectClass: groupOfNames
 cn: quay-superuser
 ```
-now let's add our existing uids to the `allusers` group by retrieving all dn values
+now let's add our existing uids to the `allusers` group by retrieving all uid values
 
 ```
 ldapsearch -x -H ldap://ds389-001.ds389-001.svc:10389 \
@@ -576,7 +764,7 @@ TLS trace: SSL3 alert write:warning:close notify
 ```
 
 mitigation for SSL or certificate mismatch/self-signed chains are the configuration options for the ldap client located in `/etc/openldap/ldap.conf`
-In our Lab we need to add following lines to succeed
+In our Lab we need to add following lines to succeed, This has already been done in the deployment for you.
 ```
 TLS_REQCERT never
 TLS_REQSAN never
@@ -605,8 +793,6 @@ we now have to options to limit unauthenticated access by
 * writing a more restrictive ACI for base 
 * disabling unauthenticated access to the whole LDAP server
 
-apply the `ACI` update to do so, as shown below 
-
 ```
 ldapmodify -x -H ldaps://ds389-001.ds389-001.svc:10636 \
                          -D 'cn=Directory Manager' \
@@ -620,7 +806,7 @@ aci: (targetattr="*")(targetfilter="(objectClass=*)")(version 3.0; acl "Enable
  
  ```
 
-afterwards, our unauthenticated queries will not return any result and will also not indicate, that we need to authenticate to retrieve them.
+afterwards, our unauthenticated queries will not return any result but will not indicate, that we need to authenticate to retrieve them.
 ```
 ldapsearch -x -H ldaps://ds389-001.ds389-001.svc:10636 \
            -b 'dc=example,dc=com' \
@@ -639,7 +825,6 @@ result: 0 Success
 
 # numResponses: 1
 ```
-
 compared to requiring all connections to be authenticated on the LDAP server
 ```
 ldapmodify -x -H ldaps://ds389-001.ds389-001.svc:10636 \
@@ -651,7 +836,6 @@ replace: nsslapd-allow-anonymous-access
 nsslapd-allow-anonymous-access: off
 
 ```
-
 will result in any unauthenticated query to be rejected with
 ```
 ldapsearch -x -H ldaps://ds389-001.ds389-001.svc:10636 \
@@ -662,7 +846,6 @@ ldap_bind: Inappropriate authentication (48)
 ```           
 
 ### granting userPassword changes in restricted environments
-
 as per our previous configuration and the default `ACI`, only read access is granted to authenticated Users.
 ```
 # the cn of the user might differ in your LAB, please pick any user
@@ -901,14 +1084,7 @@ dn: cn=Karl Price,ou=People,dc=example,dc=com
 the command now stalls and waits for ever. Hit `[CTRL+C]` to abort the query. What happened ?
 Well take a look at the same command using the option `-d 4`
 ```
-ldapsearch -x -H ldaps://ds389-002.ds389-002.svc:10636 \
-              -D 'cn=Directory Manager' \
-              -w 'changeme' \
-              -b 'ou=people,dc=example,dc=com' \
-              -LLL \
-              -C \
-              -d 4 \
-              dn
+ldapsearch -x -H ldaps://ds389-002.ds389-002.svc:10636                          -D 'cn=Directory Manager'                          -w 'changeme' -b ou=people,dc=example,dc=com dn -LLL -C -d 4
 ldap_build_search_req ATTRS: dn
 dn: ou=People,dc=example,dc=com
 dn: cn=Gregory Cook,ou=People,dc=example,dc=com
@@ -948,7 +1124,6 @@ now start `tshark` in a separate terminal or as background job, with protocol `l
 tshark -i any -f 'tcp port 10389' -O ldap -Y ldap -d tcp.port=10389,ldap & 
 ```
 execute the search query that was stalling once more and switch to `plain-LDAP` on port `10389` 
-
 **HINT**: if you choose to use `tshark` in background, redirect all output of ldapsearch to `/dev/null`
 ```
 ldapsearch -x -H ldap://ds389-002.ds389-002.svc:10389 \
@@ -985,7 +1160,6 @@ Lightweight Directory Access Protocol
         [Time: 0.000562006 seconds]
 ```
 followed by an anonymous bind against the LDAP `root` 
-
 **NOTE**: see the change in `Dst` to the first server happening
 ```
 Internet Protocol Version 4, Src: 10.246.1.61, Dst: 10.26.236.84

@@ -1,0 +1,79 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: tools
+spec:
+  progressDeadlineSeconds: 600
+  replicas: 1
+  revisionHistoryLimit: 0
+  selector:
+    matchLabels:
+      app: tools
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      annotations:
+        sidecar.istio.io/inject: "True"
+      creationTimestamp: null
+      labels:
+        app: tools
+        version: v1
+    spec:
+      containers:
+      - image: quay.chester.at/michi/ds389:tools
+        imagePullPolicy: Always
+        name: tools
+        resources: {}
+        terminationMessagePath: /dev/termination-log
+        terminationMessagePolicy: File
+        env:
+        - name: CA
+          value: /var/run/secrets/ds389-certs/ca.crt
+        volumeMounts:
+        - mountPath: /var/run/secrets/ds389-certs
+          name: certificate
+        - mountPath: /etc/openldap/ldap.conf
+          subPath: ldap.conf
+          name: ldap-conf
+        securityContext:
+          privileged: true
+      volumes:
+      - secret:
+          defaultMode: 420
+          secretName: certificate
+          optional: true
+        name: certificate
+      - configMap:
+          defaultMode: 420
+          name: ldap-conf
+          optional: true
+        name: ldap-conf
+      dnsPolicy: ClusterFirst
+      dnsConfig:
+        options:
+        - name: ndots
+          value: "1" 
+      restartPolicy: Always
+      schedulerName: default-scheduler
+      terminationGracePeriodSeconds: 3
+---
+apiVersion: v1
+data:
+  ldap.conf: "#\n# LDAP Defaults\n#\n\n# See ldap.conf(5) for details\n# This file
+    should be world readable but not world writable.\n\n#BASE\tdc=example,dc=com\n#URI\tldap://ldap.example.com
+    ldap://ldap-master.example.com:666\n\n#SIZELIMIT\t12\n#TIMELIMIT\t15\n#DEREF\t\tnever\n\n#
+    When no CA certificates are specified the Shared System Certificates\n# are in
+    use. In order to have these available along with the ones specified\n# by TLS_CACERTDIR
+    one has to include them explicitly:\n#TLS_CACERT\t/etc/pki/tls/cert.pem\n\n# System-wide
+    Crypto Policies provide up to date cipher suite which should\n# be used unless
+    one needs a finer grinded selection of ciphers. Hence, the\n# PROFILE=SYSTEM value
+    represents the default behavior which is in place\n# when no explicit setting
+    is used. (see openssl-ciphers(1) for more info)\n#TLS_CIPHER_SUITE PROFILE=SYSTEM\n\n#
+    Turning this off breaks GSSAPI used with krb5 when rdns = false\nSASL_NOCANON\ton\nTLS_REQCERT
+    never\nTLS_REQSAN never\n"
+kind: ConfigMap
+metadata:
+  creationTimestamp: null
+  name: ldap-conf

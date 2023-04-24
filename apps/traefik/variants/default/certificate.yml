@@ -1,0 +1,22 @@
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: traefik-ingress-ssl
+  namespace: kube-system
+spec:
+  selfSigned: {}
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: traefik-ingress-ssl
+  namespace: kube-system
+spec:
+  dnsNames:
+    - ds389-001.example.com
+    - ds389-002.example.com
+  secretName: traefik-ingress-ssl
+  issuerRef:
+    name: traefik-ingress-ssl
+  commonName: Cert-Manager
+

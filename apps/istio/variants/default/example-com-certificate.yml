@@ -1,0 +1,49 @@
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: istio
+  namespace: istio-system
+spec:
+  selfSigned: {}
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: istio
+  namespace: istio-system
+spec:
+  dnsNames:
+    - ds389-001.example.com
+    - ds389-002.example.com
+  secretName: frontend-gateway
+  issuerRef:
+    name: istio
+  commonName: Cert-Manager
+---
+apiVersion: networking.istio.io/v1beta1
+kind: Gateway
+metadata:
+  name: frontend-gateway
+  namespace: istio-system
+spec:
+  selector:
+    istio: ingressgateway
+  servers:
+  - hosts:
+    - ds389-001.example.com
+    - ds389-002.example.com
+    port:
+      name: https
+      number: 443
+      protocol: HTTPS
+    tls:
+      credentialName: frontend-gateway
+      mode: SIMPLE
+  - hosts:
+    - ds389-001.example.com
+    - ds389-002.example.com
+    port:
+      name: http
+      number: 80
+      protocol: HTTP
+

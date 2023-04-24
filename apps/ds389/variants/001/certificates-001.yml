@@ -1,0 +1,23 @@
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: ds389
+  namespace: ds389
+spec:
+  selfSigned: {}
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: ds389
+  namespace: ds389
+spec:
+  isCA: true
+  dnsNames:
+    - ds389-001.example.com
+    - ds389-001.ds389-001.svc
+    - ds389-001.ds389-001.svc.cluster.local
+  secretName: certificate
+  issuerRef:
+    name: ds389-001
+  commonName: Cert-Manager

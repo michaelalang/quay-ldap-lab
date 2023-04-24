@@ -1,0 +1,29 @@
+apiVersion: v1
+data:
+  shadow: |
+    root:$6$quay-ldap-lab$tMbegFTx6JzFjpokGXynC2gzni8kPexaElie2c8JvCRC0RLSqvRDnM4BQT3Ic971SVIef7WF/glgs9qg9QhJc0::0:99999:7:::
+    bin:*:18505:0:99999:7:::
+    daemon:*:18505:0:99999:7:::
+    adm:*:18505:0:99999:7:::
+    lp:*:18505:0:99999:7:::
+    sync:*:18505:0:99999:7:::
+    shutdown:*:18505:0:99999:7:::
+    halt:*:18505:0:99999:7:::
+    mail:*:18505:0:99999:7:::
+    operator:*:18505:0:99999:7:::
+    games:*:18505:0:99999:7:::
+    ftp:*:18505:0:99999:7:::
+    nobody:*:18505:0:99999:7:::
+    tss:!!:19124::::::
+    dbus:!!:19124::::::
+    systemd-coredump:!!:19124::::::
+    systemd-resolve:!!:19124::::::
+    polkitd:!!:19167::::::
+    setroubleshoot:!!:19167::::::
+    cockpit-ws:!!:19167::::::
+    cockpit-wsinstance:!!:19167::::::
+    dirsrv:!!:19167::::::
+kind: ConfigMap
+metadata:
+  creationTimestamp: null
+  name: shadow

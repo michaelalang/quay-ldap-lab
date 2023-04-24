@@ -1,0 +1,215 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ds389
+spec:
+  progressDeadlineSeconds: 600
+  replicas: 1
+  revisionHistoryLimit: 0
+  selector:
+    matchLabels:
+      app: ds389
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      annotations:
+        sidecar.istio.io/inject: "True"
+      creationTimestamp: null
+      labels:
+        app: ds389
+        version: v1
+    spec:
+      containers:
+      - env:
+        - name: MESH
+          value: "True"
+        - name: SYSTEMD_SLEEP
+          value: "3"
+        - name: POPULATE
+          value: "10"
+        - name: SSL
+          value: /var/run/secrets/ds389-certs/tls.crt
+        - name: SSLKEY
+          value: /var/run/secrets/ds389-certs/tls.key
+        - name: CA
+          value: /var/run/secrets/ds389-certs/ca.crt
+        image: quay.chester.at/michi/ds389:next
+        imagePullPolicy: Always
+        name: ds389
+        ports:
+        - containerPort: 10389
+          name: ldap
+          protocol: TCP
+        - containerPort: 10636
+          name: ldaps
+          protocol: TCP
+        - containerPort: 9090
+          name: http
+          protocol: TCP
+        resources: {}
+        terminationMessagePath: /dev/termination-log
+        terminationMessagePolicy: File
+        volumeMounts:
+        - mountPath: /dev/shm
+          name: devshm
+        - mountPath: /etc/dirsrv/slapd-ldap
+          name: config
+        - mountPath: /var/lib/dirsrv
+          name: data
+        - mountPath: /root/dscreate.template
+          subPath: dscreate.template
+          name: template
+        - mountPath: /var/run/secrets/ds389
+          name: ds389-config-credentials
+        - mountPath: /var/run/secrets/ds389-certs
+          name: certificate
+        - mountPath: /var/run/secrets/ds389-ca-certs
+          name: ds389-ca-certs
+        - mountPath: /etc/shadow
+          subPath: shadow
+          name: shadow
+      dnsPolicy: ClusterFirst
+      dnsConfig:
+        options:
+        - name: ndots
+          value: "1" 
+      restartPolicy: Always
+      schedulerName: default-scheduler
+      terminationGracePeriodSeconds: 3
+      volumes:
+      - name: devshm
+        emptyDir:
+          medium: Memory
+      - name: config
+        persistentVolumeClaim:
+          claimName: pvc-ds389-cfg
+      - name: data
+        persistentVolumeClaim:
+          claimName: pvc-ds389-data
+      - name: ds389-config-credentials
+        secret:
+          secretName: ds389-config-credentials
+      - configMap:
+          defaultMode: 420
+          name: template
+        name: template
+      - secret:
+          defaultMode: 420
+          secretName: certificate
+          optional: true
+        name: certificate
+      - configMap:
+          defaultMode: 420
+          name: ds389-ca-certs
+          optional: true
+        name: ds389-ca-certs
+      - configMap: 
+          defaultMode: 0400
+          name: shadow
+        name: shadow
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ds389
+spec:
+  ports:
+  - name: ldap
+    port: 10389
+    protocol: TCP
+    targetPort: 10389
+  - name: ldaps
+    port: 10636
+    protocol: TCP
+    targetPort: 10636
+  - name: http
+    port: 19090
+    protocol: TCP
+    targetPort: 9090
+  selector:
+    app: ds389
+  sessionAffinity: None
+  type: ClusterIP
+---
+apiVersion: v1
+data:
+  dscreate.template: ";\n; This is a version 2 ds setup inf file.\n; It is used by
+    the python versions of setup-ds-*\n; Most options map 1 to 1 to the original .inf
+    file.\n; However, there are some differences that I envision\n; For example, note
+    the split backend section.\n; You should be able to create, one, many or no backends
+    in an install\n;\n; The special value {instance_name} is substituted at installation
+    time.\n;\n; By default, all configuration parameters in this file are commented
+    out.\n; To use an INF file with dscreate, you must at least set the parameters\n;
+    flagged with [REQUIRED].\n\n\n[general]\n# defaults (str)\n# Description: Directory
+    Server enables administrators to use the default values for cn=config entries
+    from a specific version. If you set this parameter to \"999999999\", which is
+    the default, the instance always uses the default values of the latest version.
+    For example, to configure that the instance uses default values from version 1.3.5,
+    set this parameter to \"001003005\". The format of this value is XXXYYYZZZ, where
+    X is the major version, Y the minor version, and Z the patch level. Note that
+    each part of the value uses 3 digits and must be filled with leading zeros if
+    necessary.\n# Default value: 999999999 \n# defaults = 999999999\n\n# full_machine_name
+    (str)\n# Description: Sets the fully qualified hostname (FQDN) of this system.
+    When installing this instance with GSSAPI authentication behind a load balancer,
+    set this parameter to the FQDN of the load balancer and, additionally, set \"strict_host_checking\"
+    to \"false\".\n# Default value: \nfull_machine_name = ldap.example.com\n\n# start
+    (bool)\n# Description: Starts the instance after the install completes. If false,
+    the instance is created but started.\n# Default value: True \nstart = False\n\n#
+    strict_host_checking (bool)\n# Description: Sets whether the server verifies the
+    forward and reverse record set in the \"full_machine_name\" parameter. When installing
+    this instance with GSSAPI authentication behind a load balancer, set this parameter
+    to \"false\". Container installs imply \"false\".\n# Default value: False \nstrict_host_checking
+    = False\n\n\n[slapd]\n# instance_name (str)\n# Description: Sets the name of the
+    instance. You can refer to this value in other parameters of this INF file using
+    the \"{instance_name}\" variable. Note that this name cannot be changed after
+    the installation!\n# Default value: localhost \ninstance_name = ldap\n\n# ldapi
+    (str)\n# Description: Sets the location of socket interface of the Directory Server.\n#
+    Default value: /run/slapd-{instance_name}.socket \nldapi = /run/slapd-{instance_name}.socket\n\n#
+    port (int)\n# Description: Sets the TCP port the instance uses for LDAP connections.\n#
+    Default value: 389 \nport = 10389\n\n# root_password (str)\n# Description: Sets
+    the password of the \"cn=Directory Manager\" account (\"root_dn\" parameter).You
+    can either set this parameter to a plain text password dscreate hashes during
+    the installation or to a \"{algorithm}hash\" string generated by the pwdhash utility.
+    The password must be at least 8 characters long.  Note that setting a plain text
+    password can be a security risk if unprivileged users can read this INF file!\n#
+    Default value: Directory_Manager_Password \nroot_dn = cn=Directory Manager\n#
+    Default value: changeme\nroot_password = {PBKDF2_SHA256}AAAgALz7DxFmuRzYL/ZNK6K+cGyhaaAMpIRyJ7KMeIYAv/wG0Na1UP0ui7SrQjIXzgzXInjbWAjMFuA/8tB5nRrI/NWL2vqFUUuWVReBidZe4IwySx+Y0CHyWPy+YqWR2FNzbpTc4IQCy97/3PqxHXsSXj5qQzW7t4ZzHnQ4RfaKfN21Nz/j4CnybATigZUAYVWqKvneHsLBLGZnj/uKkKtangPh6sjHFHYCRTMmc6ME4oGcTzIfQmq626ro+0gt8iM3ov6Rjcu5gE6hQYR3WZL7yS1pyyrLw+k+rj/jnlXcPwqNUiZWPOypTE5X2qkvAuISRKixqF03O3VLzuaJtt4rnU+rsB1MTx4EavRRIqguQOOyvCAKOnVeSsBBms6dhG/JD/pq0OB/iu1Iv+rbNX6oIGZb6liaqRrvQvH4QWqUN2DS\n\n#
+    secure_port (int)\n# Description: Sets the TCP port the instance uses for TLS-secured
+    LDAP connections (LDAPS).\n# Default value: 636 \nsecure_port = 10636\n\n# self_sign_cert
+    (bool)\n# Description: Sets whether the setup creates a self-signed certificate
+    and enables TLS encryption during the installation. The certificate is not suitable
+    for production, but it enables administrators to use TLS right after the installation.
+    You can replace the self-signed certificate with a certificate issued by a Certificate
+    Authority. If set to False, you can enable TLS later by importing a CA/Certificate
+    and enabling 'dsconf <instance_name> config replace nsslapd-security=on'\n# Default
+    value: True \nself_sign_cert = False\n\n# self_sign_cert_valid_months (int)\n#
+    Description: Set the number of months the issued self-signed certificate will
+    be valid.\n# Default value: 24 \n; self_sign_cert_valid_months = 24\n\n\n[backend-userroot]\n#
+    create_suffix_entry (bool)\n# Description: Set this parameter to \"True\" to create
+    a generic root node entry for the suffix in the database.\n# Default value: False
+    \ncreate_suffix_entry = True\n\n# require_index (bool)\n# Description: Set this
+    parameter to \"True\" to refuse unindexed searches in this database.\n# Default
+    value: False \nrequire_index = True\n\n# sample_entries (str)\n# Description:
+    Set this parameter to 'yes' to add latest version of sample entries to this database.
+    \ Or, use '001003006' to use the 1.3.6 version sample entries.  Use this option,
+    for example, to create a database for testing purposes.\n# Default value: no \n;sample_entries
+    = no\n\n# suffix (str)\n# Description: Sets the root suffix stored in this database.
+    \ If you do not uncomment and set the suffix attribute the install process will
+    NOT create the backend/suffix.  You can also create multiple backends/suffixes
+    by duplicating this section.\n# Default value:  \nsuffix = dc=example,dc=com\n"
+kind: ConfigMap
+metadata:
+  creationTimestamp: null
+  name: template
+---
+apiVersion: v1
+data:
+  dn: Y249RGlyZWN0b3J5IE1hbmFnZXI=
+  pwd: Y2hhbmdlbWUK
+kind: Secret
+metadata:
+  creationTimestamp: null
+  name: ds389-config-credentials
+

@@ -22,7 +22,7 @@ spec:
         version: v1
     spec:
       containers:
-      - image: quay.chester.at/michi/ds389:tools
+      - image: quay.io/rhn_support_milang/ds389:tools
         imagePullPolicy: Always
         name: tools
         resources: {}

@@ -35,7 +35,7 @@ spec:
           value: /var/run/secrets/ds389-certs/tls.key
         - name: CA
           value: /var/run/secrets/ds389-certs/ca.crt
-        image: quay.chester.at/michi/ds389:next
+        image: quay.io/rhn_support_milang/ds389:next
         imagePullPolicy: Always
         name: ds389
         ports:

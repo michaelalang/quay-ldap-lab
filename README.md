@@ -10,12 +10,12 @@ Following requirements are necessary upfront to ensure a smooth experience with 
  - a git repository access able through https
  - registry credentials to pull various images
  - superuser privileges as kind-k8s doesn't work well with rootless deployments
- - firewalld needs to be disabled 
+ - firewalld needs to be disabled
 
 ensure, you have been successfully logged in to following registries (using the default image set)
 - quay.io
 - docker.io
- 
+
 ```
 # please use your approriate credentials for the registries 
 for registry in quay.io docker.io ; do 
@@ -39,7 +39,7 @@ fs.inotify.max_user_watches = 21155100
 EOF
 sysctl -p /etc/sysctl.d/kind.conf
 ```
-disable firewalld to not conflict with crio rules 
+disable firewalld to not conflict with crio rules
 
 ```
 systemctl disable --now firewalld
@@ -75,7 +75,7 @@ kind create cluster --config quay-ldap-lab.yml
 #### deploy the necessary services to the k8s cluster
 ##### metallb for ingress connectivity
 
-deploy the controller 
+deploy the controller
 
 ```
 oc create -k apps/metallb/base 
@@ -99,7 +99,7 @@ add the CR to finish the metallb deployment
 oc -n metallb-system create -f apps/metallb/variants/default/IPAddressPool.yml
 ```
 ##### cert-manager for certificates 
-next, we want the Cert-Manager to be deployed as other deployments might require a Certificate and would need a restart to pick up a later deployed Certificate 
+next, we want the Cert-Manager to be deployed as other deployments might require a Certificate and would need a restart to pick up a later deployed Certificate
 ```
 oc create -k apps/cert-manager/base/
 oc -n cert-manager wait --for condition=Ready pods -l app.kubernetes.io/instance=cert-manager --timeout=300s
@@ -151,14 +151,14 @@ oc create -k apps/ds389/variants/001
 oc create -k apps/ds389/variants/002
 ```
 ##### our tool workbench 
-to simplify access and make resolution Lab persistent, we utilize a tool image that has various ldap tools included 
-* openldap-clients 
-* python3-ldap 
-* python3-ldap3 
-* ldapvi 
-* git 
-* wireshark-cli 
-* man 
+to simplify access and make resolution Lab persistent, we utilize a tool image that has various ldap tools included
+* openldap-clients
+* python3-ldap
+* python3-ldap3
+* ldapvi
+* git
+* wireshark-cli
+* man
 * 389-ds-base
 start a session as follows
 
@@ -172,25 +172,25 @@ oc -n ds389-001 exec -ti deploy/tools -- /bin/bash
 
 **NOTE**:
 * The following exercises are expected to be executed within a `tools` container instance.
-* All passwords are set to the string `changeme` 
+* All passwords are set to the string `changeme`
 * Cockpit instances are available at
-	* https://ds389-001.example.com
-	* https://ds389-002.example.com
+        * https://ds389-001.example.com
+        * https://ds389-002.example.com
 * if you get logged out of Cockpit use the credentials `root` : `changeme`
 * Your workstation needs to resolve the example.com names to the configured Ingress IP of the k8s cluster
 * All queries and references to attribute values are randomized. You need to adjust the values accordingly
-	* `uid=r*` or `uid=re*`
-	* `cn=Michael Moore,ou=People,dc=example,dc=com`
+        * `uid=r*` or `uid=re*`
+        * `cn=Michael Moore,ou=People,dc=example,dc=com`
 
 
 ## basic LDAP search queries
 `ldapsearch` is the tool we want to familiarize with as it's the most commonly used when looking up and or debugging LDAP records. An LDAP search requires following items:
-* ldapuri or host+port 
+* ldapuri or host+port
 * binddn + bindpwd or anonymous authentication
-* basedn 
+* basedn
 
 further more following will be added if not specified:
-* a filter 
+* a filter
 * attribute list to return
 
 let's start with the first query
@@ -226,8 +226,8 @@ attributeTypes: ( 0.9.2342.19200300.100.1.1
         X-DEPRECATED 'userid' 
 )
 ```
-as you can see, the Attribute `uid` (userid is deprecated) can be search case insensitive as well as matching parts of the string. This might be a useful information if we query for a `glob` of people starting with `name` or expect a particular entry not to be returned 
-**NOTE**: the parameter `-LLL` removes the noise comments from the ldapsearch command and is typically used to create ldif file content. 
+as you can see, the Attribute `uid` (userid is deprecated) can be search case insensitive as well as matching parts of the string. This might be a useful information if we query for a `glob` of people starting with `name` or expect a particular entry not to be returned
+**NOTE**: the parameter `-LLL` removes the noise comments from the ldapsearch command and is typically used to create ldif file content.
 ```
 ldapsearch -x -H ldap://ds389-001.ds389-001.svc:10389 \
            -b 'dc=example,dc=com' \
@@ -260,7 +260,7 @@ uid: reedcynthia
 dn: cn=James Nolan,ou=People,dc=example,dc=com
 uid: reyesmelissa
 ```
-you might question if that matters during authentication and the answer to that is, it depends :) 
+you might question if that matters during authentication and the answer to that is, it depends :)
 There are multiple ways to authenticate users against LDAP. My personal opinion is that `bind authentication` are more preferable than `search authentication`. Reason for that is that it costs more in sense of resources to search than to bind directly as we should already know the `dn` to be used.
 So *pseudo* code differences would look like
 ```
@@ -278,13 +278,13 @@ try:
                     'password')
     connection.search(baseDN, filter='(uid=user)')
     for entry in connection.entries:
-	    try:
-		    connection.bind(entry.dn,
-		                    password)
-		    return Success()
-		except InvalidCredentials:
-		    pass
-		returm AuthenticationFailed()
+            try:
+                    connection.bind(entry.dn,
+                                    password)
+                    return Success()
+                except InvalidCredentials:
+                    pass
+                returm AuthenticationFailed()
 exception InvalidCredentials:
     return AuthenticationFailed()                    
 ```
@@ -312,22 +312,22 @@ as discussed previously, specifying very exact filters is beneficial to avoid re
 (&(&(&(&(objectClass=person)(|(uid=user)(uid=user1)))(ou=IT))(department=LDAP))(!(cn=*)))
 ```
 
-Negation of a filter needs to be always expressed as 
+Negation of a filter needs to be always expressed as
 ```
 (&(uid=user)(!(objectClass=Person)))
 ```
-which get's evaluated as 
+which get's evaluated as
 * uid == user
 * AND
 * objectClass=Person == True
-* NOT 
+* NOT
 
 ###  quay specific filters 
 Red Hat Quay LDAP integration considers:
 * authentication of Users
 * mapping of ldap Groups to Quay groups
 
-**NOTE**: the word `group` in Quay/LDAP does not necessarily refer to a group as understood in posix or Windows Systems. 
+**NOTE**: the word `group` in Quay/LDAP does not necessarily refer to a group as understood in posix or Windows Systems.
 
 The word `filtering` instead if `grouping` will be more accurate to understand, what Quay is expecting.
 
@@ -346,7 +346,7 @@ the interesting configuration parameters for Quay (v3.7,v3.8) are:
 * LDAP_SUPERUSER_FILTER (v3.8)
 * LDAP_RESTRICTED_USER_FILTER (v3.8)
 
-From what we have seen so far, we should be able to fill out the appropriate parameters at ease 
+From what we have seen so far, we should be able to fill out the appropriate parameters at ease
 ```
 AUTHENTICATION_TYPE: LDAP
 LDAP_ADMIN_DN: cn=Directory Manager
@@ -363,13 +363,13 @@ LDAP_URI: ldap://ds389-001.ds389-001.svc:10389
 LDAP_USER_RDN:
   - ou=People
 ```
-the array style notation of a `dn` is Quay specific through the `yaml` syntax. 
+the array style notation of a `dn` is Quay specific through the `yaml` syntax.
 As we configure the `uid` and the `mail` being the Attribute to `match` on the entered username in various tools or the UI, you need to lookup those for authenticating correctly. Other attributes like `sAMAccountName` are typical for Windows Active directory. Bear in mind that we did not setup any `mail` attribute capable `objectClass` so using this attribute will not be possible right now.
 
-The v3.8 introduce LDAP based `LDAP_SUPERUSER_FILTER` and `LDAP_RESTRICTED_USER_FILTER` are named correctly but mis understood as `grouping` by many people as the filter most of the time will be applied like `cn=group,ou=Groups,dc=example,dc=com` 
+The v3.8 introduce LDAP based `LDAP_SUPERUSER_FILTER` and `LDAP_RESTRICTED_USER_FILTER` are named correctly but mis understood as `grouping` by many people as the filter most of the time will be applied like `cn=group,ou=Groups,dc=example,dc=com`
 
 in most of the actual LDAP Server implementations, there is a possibility to change lookups from:
-* in group xyz, get me all members 
+* in group xyz, get me all members
 * user xzy, which groups are you a member of
 
 this is typically done through the `memberOf` Attribute on the corresponding User LDAP object.
@@ -415,7 +415,7 @@ memberof: cn=schwartz-plc,ou=Groups,dc=example,dc=com
 memberof: cn=allusers,ou=Groups,dc=example,dc=com
 memberof: cn=quay-superuser,ou=Groups,dc=example,dc=com
 ```
-our Quay config.yaml `LDAP_SUPERUSER_FILTER` can be defined as 
+our Quay config.yaml `LDAP_SUPERUSER_FILTER` can be defined as
 
 ```
 LDAP_SUPERUSER_FILTER: (memberOf=cn=quay-superuser,ou=Groups,dc=example,dc=com)
@@ -459,7 +459,7 @@ uid: hrivera
 dn: cn=Tiffany Berg,ou=People,dc=example,dc=com
 uid: royjames
 ```
-versus all users not restricted 
+versus all users not restricted
 ```
 # we need to remove the negotiation in the Filter
 # no line breaks in filter possible !!!
@@ -480,7 +480,7 @@ uid: awagner
 
 Let us configure our LDAP instance to utilize the `memberof` Plugin to manage the `memberOf` attribute values if we add people to a `Basic Group` in LDAP. Compared to `Posix Group` in LDAP the basic does not carry any posix Attributes required to use it similar to `/etc/group`
 
-First enable the `memberof` plugin 
+First enable the `memberof` plugin
 ```
 ldapmodify -x -H ldap://ds389-001.ds389-001.svc:10389 \
               -D 'cn=Directory Manager' \
@@ -594,7 +594,7 @@ member: cn=Michael Moore,ou=People,dc=example,dc=com
 -
 ```
 
-Verify our member list with following search 
+Verify our member list with following search
 ```
 ldapsearch -x -H ldap://ds389-001.ds389-001.svc:10389 \
            -D 'cn=Directory Manager' \
@@ -618,7 +618,7 @@ member: cn=Tiffany Berg,ou=People,dc=example,dc=com
 member: cn=Michael Moore,ou=People,dc=example,dc=com
 ```
 the `-s` defines at which `scope` to search and since we specified the full dn of our group, it's enough to specify `base`.
-Since the memberOf attribute values have been pre populated we will not see any difference right now. 
+Since the memberOf attribute values have been pre populated we will not see any difference right now.
 Next we want to add our `quay-superuser`  group and in addition to our already manually changed User, we pick a random second one to be added.
 
 ```
@@ -634,7 +634,7 @@ add: member
 member: cn=Michael Moore,ou=People,dc=example,dc=com 
 -
 ```
-to ensure, our configured groups do match the Users `memberOf` attribute values, we also want to run a `cleanup` task on the `memberof` Plugin 
+to ensure, our configured groups do match the Users `memberOf` attribute values, we also want to run a `cleanup` task on the `memberof` Plugin
 ```
 oc -n ds389-001 exec -ti deploy/ds389-001 -- dsconf ldap plugin memberof fixup 'dc=example,dc=com'
 Attempting to add task entry...
@@ -679,7 +679,7 @@ as we can now see, the plugin took care that only groups configured are listed i
 LDAP [provides](https://www.openldap.org/doc/admin24/slapdconfig.html) a lot of debug levels and unfortunately, not all of them are available in ldapsearch.
 Still, we can utilize levels **1**, **2**, **4** and **-1** which equals the combined of all available levels.
 
-Use one of the previous chained filters (the more chains the more you'll see) and change the debug level for each query  to see the difference 
+Use one of the previous chained filters (the more chains the more you'll see) and change the debug level for each query  to see the difference
 ```
 ldapsearch -x -H ldap://ds389-001.ds389-001.svc:10389 \
            -D 'cn=Directory Manager' \
@@ -775,7 +775,7 @@ LDAP enforces restriction through `ACI` rules. Those are inherited by the parent
 Common ACI rules might be to `grant` access to all objects in the tree and limit particular sub objects from being retrieved or seen at all.
 
 Our Base setup utilized just one ACI which tells:
-* grant read,search and compare access 
+* grant read,search and compare access
 * to all target Attributes
 * to anyone (unauthenticated as well)
 ```
@@ -790,7 +790,7 @@ aci: (targetattr="*")(targetfilter="(objectClass=*)")(version 3.0; acl "Enable
  )
 ```
 we now have to options to limit unauthenticated access by
-* writing a more restrictive ACI for base 
+* writing a more restrictive ACI for base
 * disabling unauthenticated access to the whole LDAP server
 
 ```
@@ -842,8 +842,8 @@ ldapsearch -x -H ldaps://ds389-001.ds389-001.svc:10636 \
            -b 'dc=example,dc=com' \
            -s base aci 
 ldap_bind: Inappropriate authentication (48)
-	additional info: Anonymous access is not allowed
-```           
+        additional info: Anonymous access is not allowed
+```
 
 ### granting userPassword changes in restricted environments
 as per our previous configuration and the default `ACI`, only read access is granted to authenticated Users.
@@ -870,7 +870,7 @@ aci: (targetattr="userPassword")(targetfilter="(objectClass=*)")(version 3.0;
  acl "Enable password change"; allow (write)(userdn="ldap:///self");)
  
 ```
-now we'll receive a generated Password when asking to change which is configured through the LDAP plugin `passwd_modify_plugin` 
+now we'll receive a generated Password when asking to change which is configured through the LDAP plugin `passwd_modify_plugin`
 
 ```
 ldappasswd -x -H ldaps://ds389-001.ds389-001.svc:10636 \
@@ -897,7 +897,7 @@ dn: cn=Nathan Chandler,ou=People,dc=example,dc=com
 dn: cn=Tiffany Berg,ou=People,dc=example,dc=com
 dn: cn=Michael Moore,ou=People,dc=example,dc=com
 ```
-A second `ACI` we want to consider is to not represent the `userPassword` attribute at all. 
+A second `ACI` we want to consider is to not represent the `userPassword` attribute at all.
 
 ```
 ldapsearch -x -H ldaps://ds389-001.ds389-001.svc:10636 \
@@ -1044,7 +1044,7 @@ dn: cn=Karl Price,ou=People,dc=example,dc=com
 
 ### understand limitations on chaining (reason for the LAB)
 
-Unfortunately, referrals aren't as comfortable as one would consider in the first run. There are multiple issues coming along with referrals, some LDAP internal ones and others which impact the clients accessing the referral. 
+Unfortunately, referrals aren't as comfortable as one would consider in the first run. There are multiple issues coming along with referrals, some LDAP internal ones and others which impact the clients accessing the referral.
 To be clear, `referrals` are always executed by the client and that means, access restrictions, authentication, loops and much more need to be handled by the clients as well.
 
 Following example will show the easiest and a noticeable issue on the ldapsearch tool.
@@ -1101,7 +1101,7 @@ dn: cn=Karl Price,ou=People,dc=example,dc=com
 Unable to chase referral "ldaps://ds389-001.ds389-001.svc:10636/ou=people,dc=example,dc=com" (48: Inappropriate authentication)
 # refldaps://ds389-001.ds389-001.svc:10636/ou=people,dc=example,dc=com
 ```
-after processing the local objects in the directory, the client would follow the `referral` configure in `ou=External,ou=People,dc=example,dc=com`. With the LDAP RFC specification on referrals, there's no indication how authentication has to be done on referrals which ends up in having `unauthenticated binds` being send to the referral LDAP server. 
+after processing the local objects in the directory, the client would follow the `referral` configure in `ou=External,ou=People,dc=example,dc=com`. With the LDAP RFC specification on referrals, there's no indication how authentication has to be done on referrals which ends up in having `unauthenticated binds` being send to the referral LDAP server.
 
 ### tracing LDAP connections when chaining (wireshark)
 form the last Exercise we learned that `referrals` are handled by sending `unauthenticated binds` to the referral Server. How can we proof that ... we use `tshark` (wireshark-cli) to show the connections which are established by the clients.
@@ -1123,7 +1123,7 @@ now start `tshark` in a separate terminal or as background job, with protocol `l
 ```
 tshark -i any -f 'tcp port 10389' -O ldap -Y ldap -d tcp.port=10389,ldap & 
 ```
-execute the search query that was stalling once more and switch to `plain-LDAP` on port `10389` 
+execute the search query that was stalling once more and switch to `plain-LDAP` on port `10389`
 **HINT**: if you choose to use `tshark` in background, redirect all output of ldapsearch to `/dev/null`
 ```
 ldapsearch -x -H ldap://ds389-002.ds389-002.svc:10389 \
@@ -1159,7 +1159,7 @@ Lightweight Directory Access Protocol
         [Response To: 40]
         [Time: 0.000562006 seconds]
 ```
-followed by an anonymous bind against the LDAP `root` 
+followed by an anonymous bind against the LDAP `root`
 **NOTE**: see the change in `Dst` to the first server happening
 ```
 Internet Protocol Version 4, Src: 10.246.1.61, Dst: 10.26.236.84
@@ -1195,8 +1195,292 @@ similar issues will show, if
 
 
 ## replication scenarios
+LDAP replication is meant to keep directory Servers in sync, for scaling and high availability. Replication is an object based mechanism and can be best explained by pushing LDIF files from the `master` Server to the other `nodes`. 
+Replication can be setup in various ways:
+* Supplier  ( equal to being the source and often referenced as `master` )
+* Hub ( equal to having `master` like role but with a `read-only` replica, most often used for segmentation or off loading )
+* Consumer ( equal to `read-only` Servers retrieving the source from a `master` or `hub` Server )
+
+All scenarios consist of a `Replication Agreement` that defined whom and what. 
+
 ### multi master replication
+Red Hat Directory Server (upstream ds389) does support `multi-master` Replication scenarios but with a limited scope of Support (AFAIK, we did only support 4 `master` at once).
+
+In such scenarios it does not matter where you point your ldap client to add/delete/modify an object in the directory Tree.
+In the `Replication Agreement` compared to a `consumer configuration` the `Replica ID` has to be unique within all agreements. 
+The `Replica ID` identifies defines the state of the `peer` and additional information in the record that get's automatically created, references on what has been already provided and what is missing are defined. These records are as well used to troubleshoot and resolve replication issues.
+
 ### read-only replicas
+
+the `read-only` or `consumer` replica is still represented on a full LDAP instance which might run additional `suffixes` that it's authoritative for. Recommendations are to not mix functionality on replicas as that might cause more complex troubleshooting and debugging scenarios.
+
+In our Lab we'll create a `consumer` Replica on the `ds389-002` instance. 
+#### prepare `Supplier` instance for replication
+
+To simplify the process, login to the UI at https://ds389-001.example.com (if cockpit is asking for credentials user `root`:`changeme`) 
+
+* Navigate to the Entry `389 Director Server` on the left Menubar 
+* Select the `Replication` Tab 
+* click on `Enable Replication`
+
+![enter image description here](pictures/replication-001.png)
+
+* Select the `Supplier` value in the `Replication Role` dropdown
+* use `1` as the  `Replica ID` value
+* use `cn=replication manager,cn=config` for the `Replication Manager DN`
+* use `changeme` as password
+* leave `Bind Group DN` blank
+
+In a replication context, the `Replication Manager DN` will be bypassing ACI rules defined on the consumer. This bypassing does not apply if you are using the `dn` outside the replication context (eq. ldapsearch) 
+
+![enter image description here](pictures/replication-002.png)
+
+The next step is to create an `Agreement` under the `Agreements` tab.
+
+* enter a meaningful Name for the `Agreement Name` eq `ds389-002`
+* enter `ds389-002.ds389-002.svc.cluster.local` for the `Consumer Host`
+	* ensure to use `FQDN` entries to eliminate connection issues based on DNS
+* enter `10389` for the `Consumer Port`
+* enter `cn=replication manager,cn=config` for the `Bind DN`
+* enter `changeme` for the `Bind Password` and `Confirm Password`
+* select `LDAP` plain as Protocol for transmission
+* select `SIMPLE` as `Authentication Method`
+* select `Do Not Initialize` for the `Consumer Initialization` value
+
+![enter image description here](pictures/replication-003.png)
+
+#### prepare `Consumer` instance for replication
+**NOTE**: read-only on the Consumer is ensured through local `ACI` only. Without proper `ACI` setting, you need to configure `suffix referral` with  `proxy` and `authentication` forwarding. This scenario is not part of this Lab.
+
+Follow the same process as for the `Supplier`, login to the UI at https://ds389-002.example.com (if cockpit is asking for credentials user `root`:`changeme`) 
+
+* Navigate to the Entry `389 Director Server` on the left Menubar 
+* Select the `Replication` Tab 
+* click on `Enable Replication`
+
+![enter image description here](pictures/replication-004.png)
+
+* Select the `Consumer` value in the `Replication Role` dropdown
+* use `cn=replication manager,cn=config` for the `Replication Manager DN`
+* use `changeme` as password
+* leave `Bind Group DN` blank
+
+As you can notice, the `Replica ID` is not provided or shown for `Consumer` setups.
+
+![enter image description here](pictures/replication-005.png)
+
+We do not need to setup an  `Agreement` on the `Consumer` as the replication context for `cn=replication manager,cn=config` will provide the necessary permissions to modify the content.
+
+#### initialize the `Consumer` instance
+**NOTE**: after initializing the `Consumer` all extra content will be purged 
+
+* change back to the UI  at https://ds389-001.example.com
+* nagivate to the `Replication` tab and the `Agreements` tab
+* click on the `three dots` next to our configured Agreement
+* click on `Initialize Agreement` 
+* check the `Yes, I am sure` button
+* click on `Initialize Agreement`
+
+![enter image description here](pictures/replication-005.png)
+
+in the line of our Agreement, the `Last Init Status` will change from `initializing` to `initialized` when finished.
+Verify that the both instances return the exactly same result accordingly.
+```
+for id in 1 2 ; do 
+    echo "ldaps://ds389-00${id}.ds389-00${id}.svc:10636 " 
+    ldapsearch -x -H ldaps://ds389-00${id}.ds389-00${id}.svc:10636 \
+                  -D 'cn=Directory Manager' \
+                  -w 'changeme' \
+                  -b 'ou=People,dc=example,dc=com' \
+                  -LLL \
+                  '(objectClass=posixAccount)' \
+                  dn 
+done 
+ldaps://ds389-001.ds389-001.svc:10636 
+dn: cn=Tammy Scott,ou=People,dc=example,dc=com
+dn: cn=Kaitlyn Rodriguez,ou=People,dc=example,dc=com
+dn: cn=Jonathan Frazier,ou=People,dc=example,dc=com
+dn: cn=Natalie Long,ou=People,dc=example,dc=com
+dn: cn=Janet Hanson,ou=People,dc=example,dc=com
+dn: cn=Kristin Gonzalez,ou=People,dc=example,dc=com
+dn: cn=Michele Marks,ou=People,dc=example,dc=com
+dn: cn=Rebecca Hurst,ou=People,dc=example,dc=com
+dn: cn=Dawn Thompson,ou=People,dc=example,dc=com
+dn: cn=Isaac Rice,ou=People,dc=example,dc=com
+
+ldaps://ds389-002.ds389-002.svc:10636 
+dn: cn=Tammy Scott,ou=People,dc=example,dc=com
+dn: cn=Kaitlyn Rodriguez,ou=People,dc=example,dc=com
+dn: cn=Jonathan Frazier,ou=People,dc=example,dc=com
+dn: cn=Natalie Long,ou=People,dc=example,dc=com
+dn: cn=Janet Hanson,ou=People,dc=example,dc=com
+dn: cn=Kristin Gonzalez,ou=People,dc=example,dc=com
+dn: cn=Michele Marks,ou=People,dc=example,dc=com
+dn: cn=Rebecca Hurst,ou=People,dc=example,dc=com
+dn: cn=Dawn Thompson,ou=People,dc=example,dc=com
+dn: cn=Isaac Rice,ou=People,dc=example,dc=com
+```
+
+Update are sent immediately or as soon as possible in case of issues. Try it by adding a new `organizationalUnit` 
+```
+ldapadd -x -H ldaps://ds389-001.ds389-001.svc:10636 \
+           -D 'cn=Directory Manager' \
+           -w 'changeme'
+dn: ou=Custom,dc=example,dc=com
+objectClass: top
+objectClass: organizationalUnit
+ou: Custom
+
+```
+check both Servers again
+```
+ for id in 1 2 ; do
+    echo "ldaps://ds389-00${id}.ds389-00${id}.svc:10636" 
+    ldapsearch -x -H ldaps://ds389-00${id}.ds389-00${id}.svc:10636 \
+                  -D 'cn=Directory Manager' \
+                  -w 'changeme' \
+                  -b 'dc=example,dc=com' \
+                  -LLL \
+                  '(objectClass=organizationalUnit)' \
+                  dn ou
+done
+ldaps://ds389-001.ds389-001.svc:10636
+dn: ou=People,dc=example,dc=com
+ou: People
+dn: ou=Groups,dc=example,dc=com
+ou: Groups
+dn: ou=Custom,dc=example,dc=com
+ou: Custom
+
+ldaps://ds389-002.ds389-002.svc:10636
+dn: ou=People,dc=example,dc=com
+ou: People
+dn: ou=Groups,dc=example,dc=com
+ou: Groups
+dn: ou=Custom,dc=example,dc=com
+ou: Custom
+```
+### changing read-only scenario to multi-master scenario
+
+Scenario changing can be useful as long as one bears in mind that without proper `ACI` the state of the servers might differ. 
+In our Lab we do know who is writing when so it's safe to change the `Role` of our Consumer.\
+
+* change to the UI  at https://ds389-002.example.com
+* Navigate to the `Replication` tab
+* click on `Change Role`
+* select `Supplier` from the `New Role` dropdown
+* select `2` as value for the `Replica ID` (1 is used at the instance ds389-001)
+* check the `Yes, I am sure` checkbox
+* click `Change Role` 
+
+Configure an `Agreement` for the other instance (the consumer agreement on ds389-001 for the instance ds389-002 is still valid)
+* Navigate to the `Agreements` tab
+* click on `Create Agreement`
+* enter a meaningful Name for the `Agreement Name` eq `ds389-001`
+* enter `ds389-001.ds389-001.svc.cluster.local` for the `Consumer Host`
+	* ensure to use `FQDN` entries to eliminate connection issues based on DNS
+* enter `10389` for the `Consumer Port`
+* enter `cn=replication manager,cn=config` for the `Bind DN`
+* enter `changeme` for the `Bind Password` and `Confirm Password`
+* select `LDAP` plain as Protocol for transmission
+* select `SIMPLE` as `Authentication Method`
+* select `Do Online Initialization` for the `Consumer Initialization` value
+* click `Save Agreement`
+
+After the dialog closes, the other instance get's our changes replicated at once and will show failure or success in the `Last Init State` field in our Agreement configuration.
+
+Now check that replication works as expected by changing a password for a User (random picked)
+```
+# do a repeating query for verification on both servers
+ldapsearch -x -H ldaps://ds389-001.ds389-001.svc:10636 \
+              -D 'cn=Tammy Scott,ou=People,dc=example,dc=com' \
+              -w 'changeme' \
+              -b 'ou=People,dc=example,dc=com' \
+              -LLL \
+              '(objectClass=posixAccount)' \
+              dn
+dn: cn=Tammy Scott,ou=People,dc=example,dc=com
+dn: cn=Kaitlyn Rodriguez,ou=People,dc=example,dc=com
+dn: cn=Jonathan Frazier,ou=People,dc=example,dc=com
+[.. output omitted ..]
+
+ldapsearch -x -H ldaps://ds389-002.ds389-002.svc:10636 \
+              -D 'cn=Tammy Scott,ou=People,dc=example,dc=com' \
+              -w 'changeme' \
+              -b 'ou=People,dc=example,dc=com' \
+              -LLL \
+              '(objectClass=posixAccount)' \
+              dn
+dn: cn=Tammy Scott,ou=People,dc=example,dc=com
+dn: cn=Kaitlyn Rodriguez,ou=People,dc=example,dc=com
+dn: cn=Jonathan Frazier,ou=People,dc=example,dc=com
+
+# change the password for the user on the first instance
+ldappasswd -x -H ldaps://ds389-001.ds389-001.svc:10636 \
+              -D 'cn=Tammy Scott,ou=People,dc=example,dc=com' \
+              -w 'changeme'
+New password: Ab;m148>
+
+# repeat the query for verification on both servers again
+# don't forget to change to the new password 
+ldapsearch -x -H ldaps://ds389-001.ds389-001.svc:10636 \
+              -D 'cn=Tammy Scott,ou=People,dc=example,dc=com' \
+              -w 'Ab;m148>' \
+              -b 'ou=People,dc=example,dc=com' \
+              -LLL \
+              '(objectClass=posixAccount)' \
+              dn
+dn: cn=Tammy Scott,ou=People,dc=example,dc=com
+dn: cn=Kaitlyn Rodriguez,ou=People,dc=example,dc=com
+dn: cn=Jonathan Frazier,ou=People,dc=example,dc=com
+[.. output omitted ..]
+
+ldapsearch -x -H ldaps://ds389-002.ds389-002.svc:10636 \
+              -D 'cn=Tammy Scott,ou=People,dc=example,dc=com' \
+              -w 'Ab;m148>' \
+              -b 'ou=People,dc=example,dc=com' \
+              -LLL \
+              '(objectClass=posixAccount)' \
+              dn
+dn: cn=Tammy Scott,ou=People,dc=example,dc=com
+dn: cn=Kaitlyn Rodriguez,ou=People,dc=example,dc=com
+dn: cn=Jonathan Frazier,ou=People,dc=example,dc=com
+[.. output omitted ..]
+
+# and now, the otherway arround 
+# change the password for the user on the second instance
+ldappasswd -x -H ldaps://ds389-002.ds389-002.svc:10636 \
+              -D 'cn=Tammy Scott,ou=People,dc=example,dc=com' \
+              -w 'Ab;m148>'
+New password: 8:0>VWix
+
+# repeat the query for verification on both servers again
+# don't forget to change to the new password 
+ldapsearch -x -H ldaps://ds389-001.ds389-001.svc:10636 \
+              -D 'cn=Tammy Scott,ou=People,dc=example,dc=com' \
+              -w '8:0>VWix' \
+              -b 'ou=People,dc=example,dc=com' \
+              -LLL \
+              '(objectClass=posixAccount)' \
+              dn
+dn: cn=Tammy Scott,ou=People,dc=example,dc=com
+dn: cn=Kaitlyn Rodriguez,ou=People,dc=example,dc=com
+dn: cn=Jonathan Frazier,ou=People,dc=example,dc=com
+[.. output omitted ..]
+
+ldapsearch -x -H ldaps://ds389-002.ds389-002.svc:10636 \
+              -D 'cn=Tammy Scott,ou=People,dc=example,dc=com' \
+              -w '8:0>VWix' \
+              -b 'ou=People,dc=example,dc=com' \
+              -LLL \
+              '(objectClass=posixAccount)' \
+              dn
+dn: cn=Tammy Scott,ou=People,dc=example,dc=com
+dn: cn=Kaitlyn Rodriguez,ou=People,dc=example,dc=com
+dn: cn=Jonathan Frazier,ou=People,dc=example,dc=com
+[.. output omitted ..]
+```
+
 ## extras 
 ### bootstrap LDAP deployments
 #### automate LDAP deployments

@@ -1223,7 +1223,7 @@ To simplify the process, login to the UI at https://ds389-001.example.com (if co
 * Select the `Replication` Tab 
 * click on `Enable Replication`
 
-![enter image description here](pictures/replication-001.png)
+![enter image description here](pictures/replication001.png)
 
 * Select the `Supplier` value in the `Replication Role` dropdown
 * use `1` as the  `Replica ID` value
@@ -1233,7 +1233,7 @@ To simplify the process, login to the UI at https://ds389-001.example.com (if co
 
 In a replication context, the `Replication Manager DN` will be bypassing ACI rules defined on the consumer. This bypassing does not apply if you are using the `dn` outside the replication context (eq. ldapsearch) 
 
-![enter image description here](pictures/replication-002.png)
+![enter image description here](pictures/replication002.png)
 
 The next step is to create an `Agreement` under the `Agreements` tab.
 
@@ -1247,7 +1247,7 @@ The next step is to create an `Agreement` under the `Agreements` tab.
 * select `SIMPLE` as `Authentication Method`
 * select `Do Not Initialize` for the `Consumer Initialization` value
 
-![enter image description here](pictures/replication-003.png)
+![enter image description here](pictures/replication003.png)
 
 #### prepare `Consumer` instance for replication
 **NOTE**: read-only on the Consumer is ensured through local `ACI` only. Without proper `ACI` setting, you need to configure `suffix referral` with  `proxy` and `authentication` forwarding. This scenario is not part of this Lab.
@@ -1258,7 +1258,7 @@ Follow the same process as for the `Supplier`, login to the UI at https://ds389-
 * Select the `Replication` Tab 
 * click on `Enable Replication`
 
-![enter image description here](pictures/replication-004.png)
+![enter image description here](pictures/replication004.png)
 
 * Select the `Consumer` value in the `Replication Role` dropdown
 * use `cn=replication manager,cn=config` for the `Replication Manager DN`
@@ -1267,7 +1267,7 @@ Follow the same process as for the `Supplier`, login to the UI at https://ds389-
 
 As you can notice, the `Replica ID` is not provided or shown for `Consumer` setups.
 
-![enter image description here](pictures/replication-005.png)
+![enter image description here](pictures/replication005.png)
 
 We do not need to setup an  `Agreement` on the `Consumer` as the replication context for `cn=replication manager,cn=config` will provide the necessary permissions to modify the content.
 
@@ -1281,7 +1281,7 @@ We do not need to setup an  `Agreement` on the `Consumer` as the replication con
 * check the `Yes, I am sure` button
 * click on `Initialize Agreement`
 
-![enter image description here](pictures/replication-005.png)
+![enter image description here](pictures/replication006.png)
 
 in the line of our Agreement, the `Last Init Status` will change from `initializing` to `initialized` when finished.
 Verify that the both instances return the exactly same result accordingly.

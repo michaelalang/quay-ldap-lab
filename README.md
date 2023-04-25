@@ -245,7 +245,7 @@ uid: reyesmelissa
 dn: cn=Tiffany Berg,ou=People,dc=example,dc=com
 uid: royjames
 ```
-we did expect that only two records are return but received three so we can limit our matching further
+we did expect that only two records are returned but received three so we can limit our matching further
 ```
 ldapsearch -x -H ldap://ds389-001.ds389-001.svc:10389 \
            -b 'dc=example,dc=com' \
@@ -366,7 +366,7 @@ LDAP_USER_RDN:
 the array style notation of a `dn` is Quay specific through the `yaml` syntax.
 As we configure the `uid` and the `mail` being the Attribute to `match` on the entered username in various tools or the UI, you need to lookup those for authenticating correctly. Other attributes like `sAMAccountName` are typical for Windows Active directory. Bear in mind that we did not setup any `mail` attribute capable `objectClass` so using this attribute will not be possible right now.
 
-The v3.8 introduce LDAP based `LDAP_SUPERUSER_FILTER` and `LDAP_RESTRICTED_USER_FILTER` are named correctly but mis understood as `grouping` by many people as the filter most of the time will be applied like `cn=group,ou=Groups,dc=example,dc=com`
+The v3.8 introduced LDAP based `LDAP_SUPERUSER_FILTER` and `LDAP_RESTRICTED_USER_FILTER` are named correctly but misunderstood as `grouping` by many people as the filter most of the time will be applied like `cn=group,ou=Groups,dc=example,dc=com`
 
 in most of the actual LDAP Server implementations, there is a possibility to change lookups from:
 * in group xyz, get me all members
@@ -789,7 +789,7 @@ aci: (targetattr="*")(targetfilter="(objectClass=*)")(version 3.0; acl "Enable
   anyone domain read"; allow (read, search, compare)(userdn="ldap:///anyone");
  )
 ```
-we now have to options to limit unauthenticated access by
+we now have two options to limit unauthenticated access by
 * writing a more restrictive ACI for base
 * disabling unauthenticated access to the whole LDAP server
 
@@ -856,7 +856,7 @@ Result: Insufficient access (50)
 Additional info: Insufficient access rights
 ```
 
-With the request to allow Users to change their own passwords, we need add another `ACI` accordingly.
+With the request to allow users to change their own passwords, we need add another `ACI` accordingly.
 ```
 ldapmodify -x -H ldaps://ds389-001.ds389-001.svc:10636 \
                          -D 'cn=Directory Manager' \
@@ -870,7 +870,7 @@ aci: (targetattr="userPassword")(targetfilter="(objectClass=*)")(version 3.0;
  acl "Enable password change"; allow (write)(userdn="ldap:///self");)
  
 ```
-now we'll receive a generated Password when asking to change which is configured through the LDAP plugin `passwd_modify_plugin`
+now we'll receive a generated password when asking to change which is configured through the LDAP plugin `passwd_modify_plugin`
 
 ```
 ldappasswd -x -H ldaps://ds389-001.ds389-001.svc:10636 \
@@ -1048,7 +1048,7 @@ Unfortunately, referrals aren't as comfortable as one would consider in the firs
 To be clear, `referrals` are always executed by the client and that means, access restrictions, authentication, loops and much more need to be handled by the clients as well.
 
 Following example will show the easiest and a noticeable issue on the ldapsearch tool.
-Lets create a Loop by adding the same `ou=External,dc=people,dc=example,dc=com`  to the second server in the Lab, pointing back to the first server.
+Lets create a loop by adding the same `ou=External,dc=people,dc=example,dc=com`  to the second server in the Lab, pointing back to the first server.
 ```
 ldapadd -x -H ldaps://ds389-002.ds389-002.svc:10636 \
            -D 'cn=Directory Manager' \
@@ -1104,7 +1104,7 @@ Unable to chase referral "ldaps://ds389-001.ds389-001.svc:10636/ou=people,dc=exa
 after processing the local objects in the directory, the client would follow the `referral` configure in `ou=External,ou=People,dc=example,dc=com`. With the LDAP RFC specification on referrals, there's no indication how authentication has to be done on referrals which ends up in having `unauthenticated binds` being send to the referral LDAP server.
 
 ### tracing LDAP connections when chaining (wireshark)
-form the last Exercise we learned that `referrals` are handled by sending `unauthenticated binds` to the referral Server. How can we proof that ... we use `tshark` (wireshark-cli) to show the connections which are established by the clients.
+from the last exercise we learned that `referrals` are handled by sending `unauthenticated binds` to the referral Server. How can we proof that ... we use `tshark` (wireshark-cli) to show the connections which are established by the clients.
 For being able to see some LDAP protocol statements in tshark, we switch to `plain LDAP` on port 10389 again.
 
 ```
@@ -1191,7 +1191,7 @@ Lightweight Directory Access Protocol
 ```
 similar issues will show, if
 * certificates of the referral LDAP server are unknown or self-signed and appropriate options on the client are not configured
-* DNS resolution or Network segmentation prevent access to the referral LDAP server
+* DNS resolution or network segmentation prevent access to the referral LDAP server
 
 
 ## replication scenarios

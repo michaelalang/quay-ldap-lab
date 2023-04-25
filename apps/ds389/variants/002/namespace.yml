@@ -4,7 +4,7 @@ metadata:
   annotations:
     sidecar.istio.io/inject: "true"
   labels:
-    istio-injection: "true"
+    istio-injection: "enabled"
   creationTimestamp: null
   name: ds389-002
 spec: {}

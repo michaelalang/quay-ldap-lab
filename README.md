@@ -133,6 +133,7 @@ oc apply -k apps/istio/variants/default/
 ```
 
 with delegating all SSL SNI ingress to Istio, we need to utilize those Certificates now
+
 **NOTE**: until the `istio-ingressgateway` is available, the certificate will not match as it will be handled by traefik.
 ```
 oc -n istio-system extract secret/frontend-gateway --confirm
@@ -174,13 +175,13 @@ oc -n ds389-001 exec -ti deploy/tools -- /bin/bash
 * The following exercises are expected to be executed within a `tools` container instance.
 * All passwords are set to the string `changeme`
 * Cockpit instances are available at
-        * https://ds389-001.example.com
-        * https://ds389-002.example.com
+  * https://ds389-001.example.com
+  * https://ds389-002.example.com
 * if you get logged out of Cockpit use the credentials `root` : `changeme`
 * Your workstation needs to resolve the example.com names to the configured Ingress IP of the k8s cluster
 * All queries and references to attribute values are randomized. You need to adjust the values accordingly
-        * `uid=r*` or `uid=re*`
-        * `cn=Michael Moore,ou=People,dc=example,dc=com`
+  * `uid=r*` or `uid=re*`
+  *  `cn=Michael Moore,ou=People,dc=example,dc=com`
 
 
 ## basic LDAP search queries

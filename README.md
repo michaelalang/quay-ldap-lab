@@ -1128,6 +1128,7 @@ now start `tshark` in a separate terminal or as background job, with protocol `l
 tshark -i any -f 'tcp port 10389' -O ldap -Y ldap -d tcp.port=10389,ldap & 
 ```
 execute the search query that was stalling once more and switch to `plain-LDAP` on port `10389`
+
 **HINT**: if you choose to use `tshark` in background, redirect all output of ldapsearch to `/dev/null`
 ```
 ldapsearch -x -H ldap://ds389-002.ds389-002.svc:10389 \
@@ -1750,6 +1751,7 @@ dn: ou=Special Organization,dc=example,dc=com
 Even though, `ou=Special Organization,dc=example,dc=com` does not apply to our filter, it is returned as the `nsViewFilter` populates the objects into the `organizationalUnit` view and we did not specify any further filtering.
 
 Let's filter further by saying, any User object with a `uidNumber` greater or equal than `80000` 
+
 **NOTE**: the `uidNumber` are generated so please pick an adequate number from your objects 
 
 ```
@@ -1768,7 +1770,7 @@ dn: cn=Allison Frank,ou=People,dc=example,dc=com
 uidNumber: 85262
 ```
 
-Limit the fulter further by saying `uidNumber` greater or equal `80000` and less or equal `90000`
+Limit the filter further by saying `uidNumber` greater or equal `80000` and less or equal `90000`
 
 ```
 ldapsearch -x -H ldaps://ds389-001.ds389-001.svc:10636 \
@@ -1913,4 +1915,3 @@ objectClass: organizationalUnit
 
 
 ### monitoring LDAP servers
-

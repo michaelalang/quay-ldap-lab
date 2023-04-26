@@ -1863,6 +1863,31 @@ Press [before/after(/offset/count|:value)] Enter for the next window.
 ``` 
 You need to hit `[CTRL+C]` as ldapsearch is not understanding that 11/11 means we are finished. This gives us the opportunity to jump between the results as well (11 -> 10 -> 1 -> 5 -> 2).
 
+For paging, we need remove the virtual list view `vlv` and instead ask the Server for the appropriate Extension. Paging is less flexible compared to a `vlv` request.
+
+```
+ldapsearch -x -H ldaps://ds389-001.ds389-001.svc:10636 \
+              -D 'cn=Directory Manager' \
+              -w 'changeme' \
+              -b 'ou=people,dc=example,dc=com' \
+              -E sss=uid \
+              -E pr=1/prompt \
+              -LLL \
+              dn
+dn: cn=Allison Frank,ou=People,dc=example,dc=com
+# sortResult: (0) Success
+# pagedresults: estimate=11 cookie=MA==
+Press [size] Enter for the next {1|size} entries.
+dn: cn=Kenneth Lyons,ou=People,dc=example,dc=com
+# pagedresults: estimate=10 cookie=MA==
+# sortResult: (0) Success
+Press [size] Enter for the next {1|size} entries.
+dn: cn=Joseph Young,ou=People,dc=example,dc=com
+# pagedresults: estimate=9 cookie=MA==
+# sortResult: (0) Success
+Press [size] Enter for the next {1|size} entries.
+```
+
 The `sss` ServerSideSorting is necessary to provide a processable list in the result. It can be on any Attribute but I would recommend picking one with an index in particular if you process 10k+ entries 
 
 

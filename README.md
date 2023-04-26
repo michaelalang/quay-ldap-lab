@@ -23,6 +23,8 @@ for registry in quay.io docker.io ; do
 done 
 ```
 
+The Lab is concepted to utilize a small `k8s` Cluster as deployment and access handling is simplified compared to `podman` deployments. Still, you might want to jump to the [extras](README.md#extras) section if you choose, going for a `podman` deployment.
+
 ### Setup and prepare the system 
 
 install the required packages
@@ -161,6 +163,7 @@ to simplify access and make resolution Lab persistent, we utilize a tool image t
 * wireshark-cli
 * man
 * 389-ds-base
+
 start a session as follows
 
 ```
@@ -1483,10 +1486,431 @@ dn: cn=Jonathan Frazier,ou=People,dc=example,dc=com
 ```
 
 ## extras 
+This section is not part of the planned Workshop but completes some information on how the Lab was setup and what one can improve on managing an Red Hat Directory Server (upstream ds389)
+
 ### bootstrap LDAP deployments
+Red Hat Directory Server (upstream ds389) provides the possibility to utilize a so called `silent` configuration file. This file provides basic configurations to be used for declarative deployments.
+The file in the Lab is called `dscreate.template` but can be named as you like. 
+Syntax and defaults of the file can be seen with 
+
+```
+oc -n ds389-001 exec -ti deploy/ds389-001 -- dscreate create-template
+```
+
+For the lab, the minimal configuration removing comments looks  as follows 
+
+```
+[general]
+full_machine_name = ldap.example.com
+start = False
+strict_host_checking = False
+[slapd]
+instance_name = ldap
+ldapi = /run/slapd-{instance_name}.socket
+port = 10389
+root_dn = cn=Directory Manager
+root_password = {PBKDF2_SHA256}AAAgAJlpKHngei1LFtFeB5D6uhqmivVTwG6HV2vdvjWKRM/68PnxnIkCDYSImEsrWYgLM29Hd52WKP13V3P+cYe6O8R54sCfnAuVzx0SonPpDKsxMtMO1dpOWfxNxPWgI8Q6OTIjMO8wVkPqB2cqVkdqtdkseeo2lIw8cqHGaC8umLaxiFZhf3HoJ/QpYBxSzxT5Nb6qqi2W/MzPSVtJMhn1f27rSdmqTk68BpQXqjAXqs7Cuyytv2LP6Xkrsnm2PCBwe3V7KtFWh9tlKDeLc1cOK5S7P/gqBL9ZG5WzbTX7IJ59Uawv8iaJ3mT5L4UJlRSPE4Yp5dN0RpIykKRF3Q1OONMA4S1KKoqq0O+ZJClPFcsLS4smrZ1HKzO9WYUgpvfvY0U+2NZWBrqQQ7sLAgqDPdl4wl8/xER7m6O86L1PlJiB
+secure_port = 10636
+self_sign_cert = False
+[backend-userroot]
+create_suffix_entry = True
+require_index = True
+suffix = dc=example,dc=com
+```
+root_password should be encrypted using the `pwdhash` tool from the `ds389-ds-base`  package
+
+``` 
+oc -n ds389-001 exec deploy/tools -- pwdhash changeme
+{PBKDF2_SHA256}AAAgAJlpKHngei1LFtFeB5D6uhqmivVTwG6HV2vdvjWKRM/68PnxnIkCDYSImEsrWYgLM29Hd52WKP13V3P+cYe6O8R54sCfnAuVzx0SonPpDKsxMtMO1dpOWfxNxPWgI8Q6OTIjMO8wVkPqB2cqVkdqtdkseeo2lIw8cqHGaC8umLaxiFZhf3HoJ/QpYBxSzxT5Nb6qqi2W/MzPSVtJMhn1f27rSdmqTk68BpQXqjAXqs7Cuyytv2LP6Xkrsnm2PCBwe3V7KtFWh9tlKDeLc1cOK5S7P/gqBL9ZG5WzbTX7IJ59Uawv8iaJ3mT5L4UJlRSPE4Yp5dN0RpIykKRF3Q1OONMA4S1KKoqq0O+ZJClPFcsLS4smrZ1HKzO9WYUgpvfvY0U+2NZWBrqQQ7sLAgqDPdl4wl8/xER7m6O86L1PlJiB
+```
+other configuration options will be set using the tools `dsctl` and `dsconf` or `ldapmodify` depending on how you want to automate the deployment. 
+
+For the Lab and specifically the used container Image `quay.io/rhn_support_milang/ds389:next`, the entrypoint script uses some stop/start/cleanup logic as the Red Hat Directory Server is meant to be run with `systemd`.
+Additionally, it utilized `environment` variables to modify on the fly items like 
+
+* `Root DN` ( default cn=Directory Manager )
+* `Root password` ( default = changeme )
+* Populating the LDAP directory with `fake` users 
+* database `caching` ( lowering due to containerization )
+* adding `certificates`
+* enabling `secure LDAP`
+* starting `Cockpit` the official Red Hat Directory Server UI
+
+These items can as well be changed by using an appropriate `silent` config.
+
 #### automate LDAP deployments
 ### LDAP server configurations
 #### enabling and enforcing secure connections
+as seen in previous exercises, running plain LDAP might not be the best choice as it will leak sensitive information in case of being captured. 
+Options like `StartTLS` and `SSL/TLS` connections will prevent data from leaking. 
+To enable `SSL` capabilities, we need to import `certificates` and `keys` as well as `certificate authorities` as a broken certificate chain will be refused by the server/client as well.
+
+In our Lab, certificates are provided by cert-manager and already imported during the container startup. Certificates will be imported into the NSS database and can be managed manually through the `certutil` command.
+```
+$ oc -n ds389-001 exec deploy/ds389-001 -- certutil -d /etc/dirsrv/slapd-ldap -L 
+Certificate Nickname                                         Trust Attributes
+                                                             SSL,S/MIME,JAR/XPI
+
+Server-Cert                                                  u,u,u
+
+```
+##### importing a new certificate and chained CA 
+As mentioned is mandatory to include all chain certificates in the NSS database for a proper server/client communication. There's a limitation on importing chained certificates in one run. You need to split each certificate in the chain into a separate file for importing.
+```
+dsconf ldap security ca-certificate add --file /tmp/fullchain.pem --name fullchain
+Error: The file /tmp/fullchain.pem may be a chain file. This is not supported. Break out each certificate and key into unique files, and import them individually.
+```
+Assuming you have `letsencrypt` you will have two certificates in the chain looking like
+```
+# our intermitten certificate
+openssl x509 -in /tmp/chain3.pem -noout -subject
+subject=C = US, O = Internet Security Research Group, CN = ISRG Root X1
+# our root CA 
+openssl x509 -in /tmp/chain2.pem -noout -subject
+subject=C = US, O = Let's Encrypt, CN = R3
+# our server certificate
+openssl x509 -in /tmp/chain1.pem -noout -subject
+subject=CN = *.example.com
+```
+To utilize the new certificate we need to execute following steps
+```
+# import root CA
+dsconf ldap security ca-certificate add --file /tmp/chain2.pem --name Chain2
+# import intermittent CA
+dsconf ldap security ca-certificate add --file /tmp/chain3.pem --name Chain3
+# import server certificate with key
+dsctl ldap tls import-server-key-cert /tmp/chain1.pem /tmp/privkey.pem 
+# set our certificate as primary cert to be used 
+dsconf ldap security certificate add --name Server-Cert --file /tmp/chain1.pem --primary-cert
+
+# if SSL has not been enabled before
+dsconf ldap security enable
+```
+
+**HINT**: if you haven't enabled SSL before, it's necessary to restart the LDAP server instance
+
 #### disabling anonymous access and enforcing policies
+In our previous exercise we showed the difference between `ACI` based prevention of anonymous access and server configuration enforced. The preferred way, is to utilize both to prevent leaking sensitive data if the Server access is turned on accidentally.
+
+Disable anonymous authentication on the Server level.
+
+```
+oc -n ds389-001 exec deploy/ds389-001 -- dsconf ldap config add nsslapd-allow-anonymous-access=off
+```
+Alternatively you can use `ldapmodify` as well
+
+```
+ldapmodify -x -H ldap://ds389-001.ds389-001.svc:10389 \
+           -D 'cn=Directory Manager' \
+           -w 'changeme' 
+dn: cn=config
+changetype: modify
+add: nsslapd-allow-anonymous-access
+nsslapd-allow-anonymous-access: off
+
+```
+Afterwards, we want to ensure that our `ACI` on the `suffix` prevents anonymous access as well.
+
+```
+ldapsearch -x -H ldap://ds389-001.ds389-001.svc:10389 \
+           -D 'cn=Directory Manager' \
+           -w 'changeme' \
+           -b 'dc=example,dc=com' \
+           -s base \
+           -LLL \
+           aci
+dn: dc=example,dc=com
+aci: (targetattr="dc || description || objectClass")(targetfilter="(objectClas
+ s=domain)")(version 3.0; acl "Enable anyone domain read"; allow (read, search
+ , compare)(userdn="ldap:///anyone");)
+
+```
+use the returned `ACI` which grants anonymous access to attributes `dc`, `description`, `objectClass` for the `domain` object (like dc=example,dc=com)
+
+The new `ACI` shall look as follows
+```
+dn: dc=example,dc=com
+changetype: modify
+replace: aci
+aci: (targetattr="*")(targetfilter="(objectClass=*)")(version 3.0; acl "Disable
+  anyone read"; allow (read, search, compare)(userdn="ldap:///all");
+ )
+```
+modify the existing `ACI` with following command
+
+```
+ldapmodify -x -H ldap://ds389-001.ds389-001.svc:10389 \
+           -D 'cn=Directory Manager' \
+           -w 'changeme'
+dn: dc=example,dc=com
+changetype: modify
+replace: aci
+aci: (targetattr="*")(targetfilter="(objectClass=*)")(version 3.0; acl "Disable
+  anyone read"; allow (read, search, compare)(userdn="ldap:///all");
+ )
+
+```
+
 ### extended filters and operational attributes
+We have already learned about filtering and how crucial it can be to retrieve exactly what we are looking for. Now, imagine a Directory with 100k entries of Users identifying a particular set of them might be tricky.
+Red Hat Directory Server provides an objectClass called `nsview` which limits the returned entry for a base dn to a matching filter. 
+Lets assume, we need to search for people that we associate with being in a particular organization part. We utilize the `memberOf` attribute to group them.
+
+```
+# pick three random entries to update in your ou=People,dc=example,dc=com structure
+ldapsearch -x -H ldaps://ds389-001.ds389-001.svc:10636 \
+              -D 'cn=Directory Manager' \
+              -w 'changeme' \
+              -b 'ou=people,dc=example,dc=com' \
+              -LLL \
+              '(memberOf=*)' \
+              dn
+dn: cn=Michael George,ou=People,dc=example,dc=com
+dn: cn=Pamela Gardner,ou=People,dc=example,dc=com
+dn: cn=Allison Frank,ou=People,dc=example,dc=com
+
+# now update those with a new memberOf attribute as follows
+# you'll see the modifying entry "cn=..." after each empty line
+ldapmodify -x -H ldaps://ds389-001.ds389-001.svc:10636 \
+              -D 'cn=Directory Manager' \
+              -w 'changeme'
+dn: cn=Michael George,ou=People,dc=example,dc=com
+changetype: modify
+add: memberOf
+memberOf: cn=Special Organization,ou=Groups,dc=example,dc=com
+
+dn: cn=Pamela Gardner,ou=People,dc=example,dc=com
+changetype: modify
+add: memberOf
+memberOf: cn=Special Organization,ou=Groups,dc=example,dc=com
+
+dn: cn=Allison Frank,ou=People,dc=example,dc=com
+changetype: modify
+add: memberOf
+memberOf: cn=Special Organization,ou=Groups,dc=example,dc=com
+```
+
+assuming that we still have 10k People in that filter `(memberOf=cn=Special Organization,ou=Groups,dc=example,dc=com)` we go and create a `nsview` for it to simplify our filter statements.
+
+```
+ldapadd -x -H ldaps://ds389-001.ds389-001.svc:10636 \
+              -D 'cn=Directory Manager' \
+              -w 'changeme'
+dn: ou=Special Organization,dc=example,dc=com
+objectClass: top
+objectClass: organizationalunit
+objectClass: nsview
+ou: Special Organization
+nsViewFilter: (&(&(objectClass=posixAccount)(memberOf=cn=Special Organization,ou=Groups,dc=example,dc=com)(homeDirectory=/home/*))
+
+```
+The last  `ldapmodify` created a new `organizationalUnit` entry in our base `dc=example,dc=com` 
+```
+ldapsearch -x -H ldaps://ds389-001.ds389-001.svc:10636 \
+              -D 'cn=Directory Manager' \
+              -w 'changeme' \
+              -b 'dc=example,dc=com' \
+              -LLL \
+              -s one
+dn: ou=People,dc=example,dc=com
+ou: People
+objectClass: top
+objectClass: organizationalUnit
+
+dn: ou=Groups,dc=example,dc=com
+ou: Groups
+objectClass: top
+objectClass: organizationalUnit
+
+dn: ou=Special Organization,dc=example,dc=com
+objectClass: top
+objectClass: organizationalunit
+objectClass: nsview
+ou: Special Organization
+nsViewFilter: (&(&(objectClass=posixAccount)(memberOf=cn=Special Organization,
+ ou=Groups,dc=example,dc=com))(homeDirectory=/home/*))
+
+```
+this object can have `ACI` for restricting it further than the `base dn` restriction apply of course but for the exercise we now focus on filtering objects in there
+
+At first, all objects at `ou=Special Organization,dc=example,dc=com` will be filtered by what we specified as `nsViewFilter`.
+```
+ldapsearch -x -H ldaps://ds389-001.ds389-001.svc:10636 \
+              -D 'cn=Directory Manager' \
+              -w 'changeme' \
+              -b 'ou=Special Organization,dc=example,dc=com' \
+              -LLL \
+              dn
+dn: cn=Michael George,ou=People,dc=example,dc=com
+dn: cn=Pamela Gardner,ou=People,dc=example,dc=com
+dn: cn=Allison Frank,ou=People,dc=example,dc=com
+dn: ou=Special Organization,dc=example,dc=com
+```
+
+Even though, `ou=Special Organization,dc=example,dc=com` does not apply to our filter, it is returned as the `nsViewFilter` populates the objects into the `organizationalUnit` view and we did not specify any further filtering.
+
+Let's filter further by saying, any User object with a `uidNumber` greater or equal than `80000` 
+**NOTE**: the `uidNumber` are generated so please pick an adequate number from your objects 
+
+```
+ldapsearch -x -H ldaps://ds389-001.ds389-001.svc:10636 \
+              -D 'cn=Directory Manager' \
+              -w 'changeme' \
+              -b 'ou=Special Organization,dc=example,dc=com' \
+              -LLL \
+              '(uidNumber>=80000)' \
+              uidNumber
+dn: cn=Michael George,ou=People,dc=example,dc=com
+uidNumber: 99695
+dn: cn=Pamela Gardner,ou=People,dc=example,dc=com
+uidNumber: 88526
+dn: cn=Allison Frank,ou=People,dc=example,dc=com
+uidNumber: 85262
+```
+
+Limit the fulter further by saying `uidNumber` greater or equal `80000` and less or equal `90000`
+
+```
+ldapsearch -x -H ldaps://ds389-001.ds389-001.svc:10636 \
+              -D 'cn=Directory Manager' \
+              -w 'changeme' \
+              -b 'ou=Special Organization,dc=example,dc=com' \
+              -LLL \
+              '(&(uidNumber>=80000)(uidNumber<=90000))' \
+              uidNumber
+dn: cn=Pamela Gardner,ou=People,dc=example,dc=com
+uidNumber: 88526
+dn: cn=Allison Frank,ou=People,dc=example,dc=com
+uidNumber: 85262
+```
+
+the LDAP search that we executed seems to be still fair easy to read and understood even though it is technically 
+```
+(&(&(&(objectClass=posixAccount)(memberOf=cn=Special Organization,ou=Groups,dc=example,dc=com))(homeDirectory=/home/*))(&(uidNumber>=80000)(uidNumber<=90000)))
+```
+which is way more unread able and prone to errors if you want to further extend it. Give it a try, extend the query to filter for 
+`cn=A*`  
+**HINT**: the `commonName` values are generated so please pick an adequate match from your objects 
+
+#### virtualListViews and ServiceSideSorting 
+
+in our Example, we assume to still have a lot of records and|or that our Server is configured to not return more than a certain amount of records at a time.
+With the search extensions `vlv` and `sss` we can mitigate such limitations/scenarios and work with paged requests instead. 
+**NOTE**: the ldapsearch interface is not as comfortable as you could expect, meaning you always need to manually add the page values.
+
+```
+ldapsearch -x -H ldaps://ds389-001.ds389-001.svc:10636 \
+              -D 'cn=Directory Manager' \
+              -w 'changeme' \
+              -b 'ou=people,dc=example,dc=com' \
+              -E vlv=0/0/0/0 \
+              -E sss=uid \
+              -LLL \
+              dn
+
+dn: cn=Allison Frank,ou=People,dc=example,dc=com
+# sortResult: (0) Success
+# vlvResultpos=1 count=11 context= (0) Success
+Press [before/after(/offset/count|:value)] Enter for the next window.
+```
+the `vlv` Extension requires us to specify `before`/`after`/`offset`/`value`.
+Assuming we do want process each record one-by-one, our `before` == `0` as well as our `after` == `0`. 
+The `offset` in the initial call should be `0` as well (starting from the first entry and the `count` is `0` as we do not know how may records will there be.
+
+Now in our first response from the Server, we can see that our `vlvResultpos` = `1` and our `count` = `11`.
+We are at the first Entry with eleven in total to go .. so start  paging
+```
+ldapsearch -x -H ldaps://ds389-001.ds389-001.svc:10636 \
+              -D 'cn=Directory Manager' \
+              -w 'changeme' \
+              -b 'ou=people,dc=example,dc=com' \
+              -E vlv=0/0/0/0 \
+              -E sss=uid \
+              -LLL \
+              dn
+
+dn: cn=Allison Frank,ou=People,dc=example,dc=com
+# sortResult: (0) Success
+# vlvResultpos=1 count=11 context= (0) Success
+Press [before/after(/offset/count|:value)] Enter for the next window.
+0/0/2/11
+dn: cn=Kenneth Lyons,ou=People,dc=example,dc=com
+
+# sortResult: (0) Success
+# vlvResultpos=2 count=11 context= (0) Success
+Press [before/after(/offset/count|:value)] Enter for the next window.
+0/0/3/11
+dn: cn=Joseph Young,ou=People,dc=example,dc=com
+
+# sortResult: (0) Success
+# vlvResultpos=3 count=11 context= (0) Success
+Press [before/after(/offset/count|:value)] Enter for the next window.
+0/0/11/11
+dn: ou=People,dc=example,dc=com
+
+# sortResult: (0) Success
+# vlvResultpos=11 count=11 context= (0) Success
+Press [before/after(/offset/count|:value)] Enter for the next window.
+0/0/10/11
+dn: cn=Susan Peterson,ou=People,dc=example,dc=com
+
+# sortResult: (0) Success
+# vlvResultpos=10 count=11 context= (0) Success
+Press [before/after(/offset/count|:value)] Enter for the next window.
+...
+``` 
+You need to hit `[CTRL+C]` as ldapsearch is not understanding that 11/11 means we are finished. This gives us the opportunity to jump between the results as well (11 -> 10 -> 1 -> 5 -> 2).
+
+The `sss` ServerSideSorting is necessary to provide a processable list in the result. It can be on any Attribute but I would recommend picking one with an index in particular if you process 10k+ entries 
+
+
+#### operational attributes
+These are Red Hat Directory Server internal attributes indicating various states or documenting creator, modifyier and similar
+
+```
+ldapsearch -x -H ldaps://ds389-001.ds389-001.svc:10636 \
+              -D 'cn=Directory Manager' \
+              -w 'changeme' \
+              'ou=Special Organization,dc=example,dc=com' \
+              -LLL \
+              '(&(uidNumber>=80000)(uidNumber<=90000))' \
+              '+'
+dn: cn=Pamela Gardner,ou=People,dc=example,dc=com
+creatorsName: cn=directory manager
+modifiersName: cn=directory manager
+createTimestamp: 20230425131801Z
+modifyTimestamp: 20230426102604Z
+nsUniqueId: 98a04716-e36b11ed-80ecf415-7c27935f
+parentid: 2
+entryid: 12
+entryUUID: 2cacf57f-3557-4dc2-ab25-fc36a832f9c0
+entrydn: cn=pamela gardner,ou=people,dc=example,dc=com
+
+dn: cn=Allison Frank,ou=People,dc=example,dc=com
+creatorsName: cn=directory manager
+modifiersName: cn=directory manager
+createTimestamp: 20230425131801Z
+modifyTimestamp: 20230426102612Z
+nsUniqueId: 98a04717-e36b11ed-80ecf415-7c27935f
+parentid: 2
+entryid: 13
+entryUUID: 42b5e3b5-982a-4ec8-b7e3-0b928701efcd
+entrydn: cn=allison frank,ou=people,dc=example,dc=com
+```
+As example, the `parentid: ` is referencing to our `nsViewFilter` defined base 
+
+```
+ldapsearch -x -H ldaps://ds389-001.ds389-001.svc:10636 \
+              -D 'cn=Directory Manager' \
+              -w 'changeme' \
+              -LLL \
+              'entryid=2'
+dn: ou=People,dc=example,dc=com
+ou: People
+objectClass: top
+objectClass: organizationalUnit
+```
+
+
 ### monitoring LDAP servers
+

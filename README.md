@@ -1540,6 +1540,127 @@ Additionally, it utilized `environment` variables to modify on the fly items lik
 These items can as well be changed by using an appropriate `silent` config.
 
 #### automate LDAP deployments
+From ansible POV (and standalone deployments) upstream is having `work in progress` on the [modules](https://www.port389.org/docs/389ds/design/ansible-ds389-module.html).
+k8s wise, I would recommend sticking to `declarative` deployments and post-config through `dsctl` and `dsconf` with a gitops approach as well.
+
+Example for bootstrapping read-only slave instances
+```
+# utilize the deployment from this gitrepo 
+# instanciate another deployment 
+cp -r apps/ds389/variants/002 apps/ds389/variants/003
+cd apps/ds389/variants/002 
+sed -i -e " s#002#003#g; " *
+``` 
+create a declarative Job template that contains all necessary steps to execute 
+```
+cat <<EOF> config-job.yml
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: configure-read-only-slave
+spec:
+  template:
+    metadata:
+      annotations:
+        sidecar.istio.io/inject: "false"
+    spec:
+      containers:
+      - name: configure-read-only-slave
+        imagePullPolicy: IfNotPresent
+        image: quay.io/rhn_support_milang/ds389:tools
+        env:
+        - name: SUPPLIER_URI
+          value: "ldaps://ds389-001.ds389-001.svc.cluster.local:10389"
+        - name: BASEDN
+          value: "dc=example,dc=com"
+        - name: SSL
+          value: /var/run/secrets/ds389-certs/tls.crt
+        - name: SSLKEY
+          value: /var/run/secrets/ds389-certs/tls.key
+        - name: CA
+          value: /var/run/secrets/ds389-certs/ca.crt
+        - name: INSTANCE
+          value: "ds389-003"
+        volumeMounts:
+          - mountPath: /mnt/configsteps
+            name: config-steps
+          - mountPath: /var/run/secrets/ds389
+            name: ds389-config-credentials
+        command:
+          - /mnt/configsteps
+      restartPolicy: Never
+      volumes:
+         - name: ds389-config-credentials
+           secret:
+             secretName: ds389-config-credentials
+         - secret:
+             defaultMode: 420
+             secretName: certificate
+             optional: true
+           name: certificate
+         - configMap:
+             defaultMode: 0755
+             optional: true
+             name: config-steps
+          name: config-steps
+  backoffLimit: 0
+```
+and the related `config-steps` configMap will look like
+```
+# if we can enable replication on the consumer
+# create a new replication agreement on the Supplier with the new consumer
+# and execute a replication agreement init on the Supplier to init on the consumer
+dsconf ldap replication enable \
+       --suffix ${BASEDN} \
+       --role consumer \
+       --bind-dn 'cn=replication manager,cn=config' \
+       --bind-passwd $(cat /var/run/secrets/ds389/pwd) && \
+dsconf ${SUPPLIER_URI} \
+       -D $(cat /var/run/secrets/ds389/dn) \
+       -w $(cat /var/run/secrets/ds389/pwd) \       
+       repl-agmt create ${INSTANCE} \
+       --suffix ${BASEDN} \
+       --host ${INSTANCE}.${INSTANCE}.svc.cluster.local \
+       --port 10389 \
+       --conn-protocol LDAP \
+       --bind-dn 'cn=replication manager,cn=config' \
+       --bind-passwd $(cat /var/run/secrets/ds389/pwd) \
+       --bind-method SIMPLE && \
+dsconf ${SUPPLIER_URI} \
+       -D $(cat /var/run/secrets/ds389/dn) \
+       -w $(cat /var/run/secrets/ds389/pwd) \
+       repl-agmt init --suffix ${BASEDN} \
+       ${INSTANCE}
+```
+
+other examples as for example used in this Lab are
+```
+# syntax for the connection is either
+# on the respective instance 
+#   dsconf|dsctl ldap
+# from a remote system
+#   dsconf|dsctl ${LDAPURI} -D ${BINDDN} -w ${BINWDPWD}
+#
+# import a certificate with key
+dsctl ldap tls import-server-key-cert ${SSL} ${SSLKEY}
+# set a certificate as primary certificate
+dsconf ldap security certificate add --name default --file ${SSL} --primary-cert
+# add  a CA 
+dsconf ldap security ca-certificate add --file ${CA} --name ${CA}
+# enable SSL/TLS on the server
+dsconf ldap security enable
+# disable the backend cache autosizing
+dsconf ldap backend config set --cache-autosize=0
+# tune the backend cache size
+dsconf ldap backend config set --dbcachesize=268435456
+# disable anonymous access
+dsconf ldap config add nsslapd-allow-anonymous-access=off
+...
+```
+
+as well as any LDIF updates which as well perfectly fit into a `declarative` gitops approach. 
+
+
 ### LDAP server configurations
 #### enabling and enforcing secure connections
 as seen in previous exercises, running plain LDAP might not be the best choice as it will leak sensitive information in case of being captured. 
@@ -1940,3 +2061,166 @@ objectClass: organizationalUnit
 
 
 ### monitoring LDAP servers
+
+Monitoring your LDAP infrastructure is mandatory as it typically is one of the core components in your Infrastructure. 
+
+Red Hat Directory Server provides a ldapsearch query able interface to various items you want to pay attention to:
+
+* connectivity (connections, traffic)
+* operations (modifying,searching,authentication,caches,...)
+* database (backend) metrics (page, cache, hit/miss)
+* replication states 
+* disk space (as this renders your server read-only automatically)
+
+You can query those values as follows 
+
+```
+# -o ldif-wrap removes the line breaks for read ability
+ldapsearch -x -H ldap://ds389-001.ds389-001.svc:10389 \
+              -D 'cn=Directory Manager' \
+              -w 'changeme' \
+              -b 'cn=monitor' \
+              -s sub \
+              -LLL \
+              -o ldif-wrap=999
+dn: cn=monitor
+objectClass: top
+objectClass: extensibleObject
+cn: monitor
+version: 389-Directory/2.0.15 B2022.084.1336
+threads: 16
+connection: 487:20230426152041Z:2:1:-:cn=directory manager:0:0:0:487:ip=127.0.0.6
+currentconnections: 1
+totalconnections: 487
+currentconnectionsatmaxthreads: 0
+maxthreadsperconnhits: 0
+[.. output omitted ..]
+
+dn: cn=disk space,cn=monitor
+objectClass: top
+objectClass: extensibleObject
+cn: disk space
+dsdisk: partition="/" size="53660876800" used="7949455360" available="45711421440" use%="14"
+dsdisk: partition="/etc/shadow" size="53660876800" used="7949455360" available="45711421440" use%="14"
+
+dn: cn=snmp,cn=monitor
+objectClass: top
+objectClass: extensibleObject
+cn: snmp
+anonymousbinds: 6
+unauthbinds: 6
+simpleauthbinds: 151
+strongauthbinds: 332
+bindsecurityerrors: 6
+[.. output omitted ..]
+```
+
+Replication states are reported in the `cn=config` tree and contain the escaped `suffix`. In case you want to simplify or need to query multiple suffix replications you can use the filter `(objectClass=nsds5replicationagreement)`
+
+```
+ldapsearch -x -H ldap://ds389-001.ds389-001.svc:10389 \
+              -D 'cn=Directory Manager' \
+              -w 'changeme' \
+              -b 'cn=config' \
+              -s sub \
+              -LLL \
+              -o ldif-wrap=9999 \
+              '(objectClass=nsds5replicationagreement)'
+dn: cn=ds389-002,cn=replica,cn=dc\3Dexample\2Cdc\3Dcom,cn=mapping tree,cn=config
+objectClass: top
+objectClass: nsds5replicationagreement
+cn: ds389-002
+nsDS5ReplicaRoot: dc=example,dc=com
+description: ds389-002
+nsDS5ReplicaHost: ds389-002.ds389-002.svc
+[.. output omitted ..]
+nsds5replicaChangesSentSinceStartup:: MToyLzAg
+nsds5replicaLastUpdateStatus: Error (0) Replica acquired successfully: Incremental update succeeded
+nsds5replicaLastUpdateStatusJSON: {"state": "green", "ldap_rc": "0", "ldap_rc_text": "Success", "repl_rc": "0", "repl_rc_text": "replica acquired", "date": "2023-04-26T13:08:10Z", "message": "Error (0) Replica acquired successfully: Incremental update succeeded"}
+nsds5replicaUpdateInProgress: FALSE
+nsds5replicaLastInitStart: 20230426125719Z
+nsds5replicaLastInitEnd: 20230426125721Z
+nsds5replicaLastInitStatus: Error (0) Total update succeeded
+nsds5replicaLastInitStatusJSON: {"state": "green", "ldap_rc": "0", "ldap_rc_text": "Success", "repl_rc": "0", "repl_rc_text": "replica acquired", "conn_rc": "0", "conn_rc_text": "operation success", "date": "2023-04-26T12:57:21Z", "message": "Error (0) Total update succeeded"}
+```
+Unfortunately, the word `Error` is always present even if the replication is up and health. With a more recent version of the Red Hat Directory Server the `nsds5replicaLastInitStatusJSON` returns a json parse able response that gives a better indication
+
+```
+ldapsearch -x -H ldap://ds389-001.ds389-001.svc:10389 \
+              -D 'cn=Directory Manager' \
+              -w 'changeme' \
+              -b 'cn=config' \
+              -s sub \
+              -LLL \
+              -o ldif-wrap=9999 \
+              '(objectClass=nsds5replicationagreement)' \
+              nsds5replicaLastUpdateStatusJSON | \
+      cut -f2- -d' ' | \
+      tail -2 | \
+      python3 -m json.tool
+{
+    "state": "green",
+    "ldap_rc": "0",
+    "ldap_rc_text": "Success",
+    "repl_rc": "0",
+    "repl_rc_text": "replica acquired",
+    "date": "2023-04-26T13:08:10Z",
+    "message": "Error (0) Replica acquired successfully: Incremental update succeeded"
+}
+```
+for example, removing the `cn=replication manager,cn=config` definition will show with the next replication item
+
+```
+{
+    "state": "red",
+    "ldap_rc": "49",
+    "ldap_rc_text": "Invalid credentials",
+    "repl_rc": "16",
+    "repl_rc_text": "connection error",
+    "date": "2023-04-26T15:32:13Z",
+    "message": "Error (49) Problem connecting to replica - LDAP error: Invalid credentials (connection error)"
+}
+```
+
+With `Consumers` and `referall on update` you are not expected to see any issue other than connectivity as the `suffix` will redirect any write to the `Supplier` server.
+
+```
+ldapvi -D 'cn=Directory Manager' \
+       -w 'changeme' \
+       -h ldap://ds389-002.ds389-002.svc:10389 
+
+     16 entries read                                                                                                                                                                                    
+add: 0, rename: 0, modify: 1, delete: 0
+Action? [yYqQvVebB*rsf+?] y
+Received referral to ldap://ds389-001.ds389-001.svc.cluster.local:10389.
+You are not logged in to ldap://ds389-001.ds389-001.svc.cluster.local:10389 yet.
+Type '!' or 'y' to do so.
+Rebind? [y!nB*qQ?] y
+
+--- Login
+
+--- Login
+Type M-h for help on key bindings.
+
+Filter or DN: cn=Directory Manager
+
+    Password: ********
+
+Bound as cn=Directory Manager.
+Done.
+
+# or without rebinding
+ldapadd -x -H ldap://ds389-002.ds389-002.svc:10389 \
+           -D 'cn=Directory Manager' \
+           -w 'changeme' \
+           -MM
+dn: dc=replication,dc=example,dc=com
+description: dc=replication,dc=example,dc=com
+dc: replication
+objectClass: top
+objectClass: domain
+
+adding new entry "dc=replication,dc=example,dc=com"
+ldap_add: Server is unwilling to perform (53)
+	additional info: cannot update referral
+```
